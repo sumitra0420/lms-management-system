@@ -9,3 +9,11 @@ frontend/node_modules/
 frontend/dist/
 frontend/.angular/
 frontend/.vscode/
+
+# Python
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.env
+backend/tests/output/

@@ -14,3 +14,6 @@ This directory contains reference projects only. Do not modify, build upon, or t
 ## Usage
 
 These projects exist for reading and learning from. When building the actual LMS system, refer to `frontend/` and `backend/` in the repo root instead.
+
+## Git Commit
+When finishing a task, provide git comment in details (max 4 lines)
