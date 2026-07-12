@@ -12,7 +12,7 @@ interface PipelineStep {
 interface UploadFile {
   name: string;
   date: string;
-  status: 'validation-failed' | 'uploaded' | 'extracting';
+  status: 'validation-failed' | 'validated' | 'uploaded' | 'extracting';
 }
 
 @Component({
@@ -37,6 +37,10 @@ export class Uploads {
 
   constructor(private uploadState: UploadStateService) {}
 
+  staticFiles: UploadFile[] = [
+    { name: 'midterm_history_v2.docx', date: 'Oct 24, 2023', status: 'validated' },
+  ];
+
   stats = computed(() => ({
     totalFiles: this.uploadState.uploadedFiles().length,
     successRate: '98.4%'
@@ -50,11 +54,12 @@ export class Uploads {
   ];
 
   get allFiles(): UploadFile[] {
-    return this.uploadState.uploadedFiles().map(f => ({
+    const uploaded = this.uploadState.uploadedFiles().map(f => ({
       name: f.name,
       date: 'Just now',
       status: 'extracting' as const,
     }));
+    return [...uploaded, ...this.staticFiles];
   }
 
   get filteredFiles() {
@@ -70,6 +75,7 @@ export class Uploads {
   getStatusLabel(status: UploadFile['status']): string {
     const map: Record<UploadFile['status'], string> = {
       'validation-failed': 'Validation Failed',
+      'validated': 'Validation Passed',
       'uploaded': 'Uploaded to Canvas',
       'extracting': 'Extracting',
     };

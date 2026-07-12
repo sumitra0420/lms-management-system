@@ -269,6 +269,11 @@
     color: #dc2626;
   }
 
+  &.badge-validated {
+    background: #f0fdf4;
+    color: #16a34a;
+  }
+
   &.badge-uploaded {
     background: #f0fdf4;
     color: #16a34a;
@@ -309,6 +314,12 @@
   font-weight: 500;
 
   &:hover { text-decoration: underline; }
+
+  &.disabled {
+    color: #cbd5e1;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
 }
 
 .table-footer {
