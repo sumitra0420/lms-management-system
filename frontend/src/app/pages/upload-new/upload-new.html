@@ -1,0 +1,96 @@
+<div class="uploads-page">
+  <div class="page-header">
+    <h1>Upload Document</h1>
+    <p>Convert your educational materials into interactive quizzes using our automated extraction engine.</p>
+  </div>
+
+  <div
+    class="drop-zone"
+    [class.dragging]="isDragging"
+    [class.has-files]="selectedFiles.length > 0"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)">
+
+    <div class="drop-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="none" stroke="#2563eb" stroke-width="1.5" viewBox="0 0 24 24">
+        <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+    </div>
+
+    @if (selectedFiles.length > 0) {
+      <div class="selected-files">
+        <p class="file-count">{{ selectedFiles.length }} file{{ selectedFiles.length > 1 ? 's' : '' }} selected</p>
+        @for (file of selectedFiles; track file.name) {
+          <div class="file-item">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#2563eb" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span>{{ file.name }}</span>
+          </div>
+        }
+      </div>
+    } @else {
+      <p class="drop-title">Drag and drop your document here</p>
+      <p class="drop-sub">Supports .docx and .pdf files up to 50MB</p>
+    }
+
+    <div class="drop-actions">
+      <label class="btn-select">
+        Select File from Computer
+        <input type="file" accept=".docx,.pdf" multiple (change)="onFileSelected($event)" hidden />
+      </label>
+      <button class="btn-upload" (click)="uploadNow()" [disabled]="!selectedFiles.length">
+        Upload Now
+      </button>
+    </div>
+  </div>
+
+  @if (totalFiles > 0) {
+    <div class="upload-summary">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="#16a34a" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+      Total files uploaded this session: <strong>{{ totalFiles }}</strong>
+    </div>
+  }
+
+  <div class="recent-activity">
+    <div class="section-header">
+      <h2>Recent Activity</h2>
+      <a routerLink="/uploads/processing" class="view-all">View all</a>
+    </div>
+
+    <table class="activity-table">
+      <thead>
+        <tr>
+          <th>Document ID</th>
+          <th>Filename</th>
+          <th>Status</th>
+          <th>Questions</th>
+          <th>Last Modified</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="doc-id">DOC-9421</span></td>
+          <td>Intro_to_Psychology_Final.docx</td>
+          <td><span class="badge badge-ready">READY</span></td>
+          <td>42 Items</td>
+          <td class="muted">2 hours ago</td>
+        </tr>
+        <tr>
+          <td><span class="doc-id">DOC-9418</span></td>
+          <td>Global_History_W2_Quiz.pdf</td>
+          <td><span class="badge badge-validating">VALIDATING</span></td>
+          <td>15 Items</td>
+          <td class="muted">5 hours ago</td>
+        </tr>
+        <tr>
+          <td><span class="doc-id">DOC-9405</span></td>
+          <td>Advanced_Calculus_Unit1.docx</td>
+          <td><span class="badge badge-uploaded">UPLOADED</span></td>
+          <td>--</td>
+          <td class="muted">Yesterday</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

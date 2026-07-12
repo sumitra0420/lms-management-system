@@ -1,54 +1,78 @@
-import { Component } from '@angular/core';
+import { Component, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { UploadStateService } from '../../services/upload-state.service';
 
-interface RecentFile {
-  id: string;
-  filename: string;
-  status: 'ready' | 'validating' | 'uploaded';
-  questions: string;
-  lastModified: string;
+interface PipelineStep {
+  label: string;
+  status: 'completed' | 'processing' | 'pending';
+}
+
+interface UploadFile {
+  name: string;
+  date: string;
+  status: 'validation-failed' | 'uploaded' | 'extracting';
 }
 
 @Component({
   selector: 'app-uploads',
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './uploads.html',
   styleUrl: './uploads.scss'
 })
 export class Uploads {
-  isDragging = false;
-  selectedFile: File | null = null;
+  searchQuery = '';
+  activeJobId = 'LV-8829';
+  currentPage = 1;
+  readonly pageSize = 10;
 
-  recentFiles: RecentFile[] = [
-    { id: 'DOC-9421', filename: 'Intro_to_Psychology_Final.docx', status: 'ready', questions: '42 Items', lastModified: '2 hours ago' },
-    { id: 'DOC-9418', filename: 'Global_History_W2_Quiz.pdf', status: 'validating', questions: '15 Items', lastModified: '5 hours ago' },
-    { id: 'DOC-9405', filename: 'Advanced_Calculus_Unit1.docx', status: 'uploaded', questions: '--', lastModified: 'Yesterday' },
+  get totalPages() {
+    return Math.ceil(this.filteredFiles.length / this.pageSize);
+  }
+
+  get pages() {
+    return Array.from({ length: this.totalPages }, (_, i) => i + 1);
+  }
+
+  constructor(private uploadState: UploadStateService) {}
+
+  stats = computed(() => ({
+    totalFiles: this.uploadState.uploadedFiles().length,
+    successRate: '98.4%'
+  }));
+
+  pipelineSteps: PipelineStep[] = [
+    { label: 'Pre-processing', status: 'completed' },
+    { label: 'Dual Extraction', status: 'processing' },
+    { label: 'Validation', status: 'pending' },
+    { label: 'Upload', status: 'pending' },
   ];
 
-  onDragOver(event: DragEvent) {
-    event.preventDefault();
-    this.isDragging = true;
+  get allFiles(): UploadFile[] {
+    return this.uploadState.uploadedFiles().map(f => ({
+      name: f.name,
+      date: 'Just now',
+      status: 'extracting' as const,
+    }));
   }
 
-  onDragLeave() {
-    this.isDragging = false;
+  get filteredFiles() {
+    const files = this.allFiles;
+    if (!this.searchQuery) return files;
+    return files.filter(f => f.name.toLowerCase().includes(this.searchQuery.toLowerCase()));
   }
 
-  onDrop(event: DragEvent) {
-    event.preventDefault();
-    this.isDragging = false;
-    const file = event.dataTransfer?.files[0];
-    if (file) this.selectedFile = file;
+  get totalResults() {
+    return this.uploadState.uploadedFiles().length;
   }
 
-  onFileSelected(event: Event) {
-    const input = event.target as HTMLInputElement;
-    if (input.files?.[0]) this.selectedFile = input.files[0];
-  }
-
-  uploadNow() {
-    if (!this.selectedFile) return;
-    console.log('Uploading:', this.selectedFile.name);
+  getStatusLabel(status: UploadFile['status']): string {
+    const map: Record<UploadFile['status'], string> = {
+      'validation-failed': 'Validation Failed',
+      'uploaded': 'Uploaded to Canvas',
+      'extracting': 'Extracting',
+    };
+    return map[status];
   }
 }

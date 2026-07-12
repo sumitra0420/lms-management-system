@@ -78,6 +78,25 @@
   }
 }
 
+.new-upload {
+  padding: 0 12px 12px;
+
+  .btn-new-upload {
+    display: block;
+    text-align: center;
+    background: #2563eb;
+    color: #fff;
+    text-decoration: none;
+    padding: 9px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.15s;
+
+    &:hover { background: #1d4ed8; }
+  }
+}
+
 .user-footer {
   display: flex;
   align-items: center;
