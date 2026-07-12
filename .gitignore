@@ -1,3 +1,11 @@
 data
 
 .DS_Store
+
+requirement
+
+# Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+frontend/.vscode/

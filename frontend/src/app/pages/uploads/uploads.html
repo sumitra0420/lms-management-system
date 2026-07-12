@@ -1,0 +1,68 @@
+<div class="uploads-page">
+  <div class="page-header">
+    <h1>Upload Document</h1>
+    <p>Convert your educational materials into interactive quizzes using our automated extraction engine.</p>
+  </div>
+
+  <div
+    class="drop-zone"
+    [class.dragging]="isDragging"
+    (dragover)="onDragOver($event)"
+    (dragleave)="onDragLeave()"
+    (drop)="onDrop($event)">
+
+    <div class="drop-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" fill="none" stroke="#2563eb" stroke-width="1.5" viewBox="0 0 24 24">
+        <polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/>
+        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+      </svg>
+    </div>
+
+    @if (selectedFile) {
+      <p class="file-selected">{{ selectedFile.name }}</p>
+    } @else {
+      <p class="drop-title">Drag and drop your document here</p>
+      <p class="drop-sub">Supports .docx and .pdf files up to 50MB</p>
+    }
+
+    <div class="drop-actions">
+      <label class="btn-select">
+        Select File from Computer
+        <input type="file" accept=".docx,.pdf" (change)="onFileSelected($event)" hidden />
+      </label>
+      <button class="btn-upload" (click)="uploadNow()" [disabled]="!selectedFile">
+        Upload Now
+      </button>
+    </div>
+  </div>
+
+  <div class="recent-activity">
+    <div class="section-header">
+      <h2>Recent Activity</h2>
+      <a href="#" class="view-all">View all</a>
+    </div>
+
+    <table class="activity-table">
+      <thead>
+        <tr>
+          <th>Document ID</th>
+          <th>Filename</th>
+          <th>Status</th>
+          <th>Questions</th>
+          <th>Last Modified</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (file of recentFiles; track file.id) {
+          <tr>
+            <td><span class="doc-id">{{ file.id }}</span></td>
+            <td>{{ file.filename }}</td>
+            <td><span class="badge badge-{{ file.status }}">{{ file.status | uppercase }}</span></td>
+            <td>{{ file.questions }}</td>
+            <td class="muted">{{ file.lastModified }}</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</div>
