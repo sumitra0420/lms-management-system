@@ -13,8 +13,11 @@ async def process_document(file: UploadFile = File(...)):
 
     contents = await file.read()
 
-    text        = docx_to_text(contents, file.filename)
-    result      = await check_with_retry(text)
+    try:
+        text   = docx_to_text(contents, file.filename)
+        result = await check_with_retry(text)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not extract quiz content: {exc}")
 
     consistency  = result.get("consistency", {})
     questions    = result["normalised_a"].get("questions", [])

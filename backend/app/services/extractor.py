@@ -43,10 +43,14 @@ def _extract_json_from_text(text: str) -> str:
     text = text.strip()
     if text.startswith("{"):
         return text
-    if "```json" in text:
-        start = text.index("```json") + 7
-        end = text.index("```", start)
-        return text[start:end].strip()
+    for fence in ("```json", "```"):
+        if fence in text:
+            start = text.index(fence) + len(fence)
+            try:
+                end = text.index("```", start)
+                return text[start:end].strip()
+            except ValueError:
+                pass  # no closing fence — fall through to brace scan
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end != -1 and end > start:

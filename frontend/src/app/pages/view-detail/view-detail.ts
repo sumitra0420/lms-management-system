@@ -36,7 +36,10 @@ export class ViewDetail implements OnInit {
   }
 
   ngOnInit() {
-    const result = this.uploadState.pipelineResult();
+    const indexParam = this.route.snapshot.queryParamMap.get('index');
+    const index = indexParam !== null ? +indexParam : 0;
+    const result = this.uploadState.pipelineResults()[index] ?? null;
+
     if (result) {
       this.filename         = result.filename;
       this.estimatedPoints  = result.total_points;
@@ -60,7 +63,9 @@ export class ViewDetail implements OnInit {
   }
 
   get metadataJson() {
-    const result = this.uploadState.pipelineResult();
+    const indexParam = this.route.snapshot.queryParamMap.get('index');
+    const index = indexParam !== null ? +indexParam : 0;
+    const result = this.uploadState.pipelineResults()[index] ?? null;
     if (!result) return '';
     return JSON.stringify({
       filename:          result.filename,
