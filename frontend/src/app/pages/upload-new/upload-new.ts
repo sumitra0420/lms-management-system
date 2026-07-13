@@ -11,12 +11,12 @@ import { UploadStateService } from '../../services/upload-state.service';
   styleUrl: './upload-new.scss'
 })
 export class UploadNew {
-  isDragging = false;
+  isDragging   = false;
   selectedFiles: File[] = [];
 
   constructor(
     private router: Router,
-    private uploadState: UploadStateService
+    private uploadState: UploadStateService,
   ) {}
 
   get totalFiles() {
@@ -35,8 +35,7 @@ export class UploadNew {
   onDrop(event: DragEvent) {
     event.preventDefault();
     this.isDragging = false;
-    const files = Array.from(event.dataTransfer?.files ?? []);
-    this.selectedFiles = files;
+    this.selectedFiles = Array.from(event.dataTransfer?.files ?? []);
   }
 
   onFileSelected(event: Event) {
@@ -46,7 +45,7 @@ export class UploadNew {
 
   uploadNow() {
     if (!this.selectedFiles.length) return;
-    this.selectedFiles.forEach(f => this.uploadState.addFile(f));
+    this.uploadState.addFile(this.selectedFiles[0]);
     this.router.navigate(['/uploads/processing']);
   }
 }

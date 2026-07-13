@@ -3,6 +3,10 @@
   <!-- Page header -->
   <div class="page-header">
     <div class="header-left">
+      <a routerLink="/uploads/processing" class="back-link">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        Back to Processing
+      </a>
       <h1>Review Extracted Quiz:<br />{{ filename }}</h1>
       <div class="pipeline-steps">
         @for (step of pipelineSteps; track step.label; let i = $index) {
@@ -32,7 +36,7 @@
     } @else {
       <div class="status-badge fail">
         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        HUMAN REVIEW REQUIRED: {{ flagCount }} QUESTIONS FLAGGED
+        CONSISTENCY CHECK FAILED. HUMAN REVIEW REQUIRED.
       </div>
     }
   </div>
@@ -44,10 +48,10 @@
     <div class="questions-panel">
       <div class="questions-header">
         <h2>Question Preview ({{ questions.length }})</h2>
-        <span class="points-label">Estimated Points: {{ estimatedPoints }}</span>
+        <span class="points-label">Estimated Points: {{ estimatedPoints }} | Consistency: {{ consistencyScore | number:'1.0-2' }}</span>
       </div>
 
-      @for (q of questions; track q.number) {
+      @for (q of questions; track q.id) {
         <div class="question-card" [class.flagged-card]="mode === 'fail' && q.flagged">
           <div class="question-top">
             <div class="type-row">
@@ -71,19 +75,26 @@
             }
           </div>
 
-          <p class="question-text">{{ q.number }}. {{ q.text }}</p>
+          <p class="question-text">{{ q.id }}. {{ q.text }}</p>
 
-          <div class="choices">
-            @for (choice of q.choices; track choice.text) {
-              <div class="choice" [class.correct]="choice.correct">
-                <div class="radio" [class.selected]="choice.correct"></div>
-                <span>{{ choice.text }}</span>
-                @if (choice.correct) {
-                  <svg class="correct-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
-                }
-              </div>
-            }
-          </div>
+          @if (q.type === 'short_answer') {
+            <div class="model-answer">
+              <span class="answer-label">Model Answer:</span>
+              <span>{{ q.correct_answer }}</span>
+            </div>
+          } @else {
+            <div class="choices">
+              @for (choice of q.choices; track choice.text) {
+                <div class="choice" [class.correct]="choice.correct">
+                  <div class="radio" [class.selected]="choice.correct"></div>
+                  <span>{{ choice.text }}</span>
+                  @if (choice.correct) {
+                    <svg class="correct-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  }
+                </div>
+              }
+            </div>
+          }
 
           @if (mode === 'fail' && q.flagged && q.flagReason) {
             <div class="flag-reason">
@@ -115,7 +126,7 @@
               {{ copied ? 'Copied!' : 'Copy Raw' }}
             </button>
           </div>
-          <pre class="code-content" [class.has-flags]="mode === 'fail'">{{ metadata }}</pre>
+          <pre class="code-content" [class.has-flags]="mode === 'fail'">{{ metadataJson }}</pre>
         </div>
       </div>
     </div>
@@ -126,7 +137,7 @@
   <div class="detail-footer">
     <div class="footer-note">
       <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#64748b" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      By clicking 'Sync to Canvas', you authorize the creation of a new quiz shell in the course: <strong>{{ course }}</strong>.
+      By clicking 'Sync to Canvas', you authorize the upload of this quiz to Canvas LMS.
     </div>
     <div class="footer-actions">
       <button class="btn-discard">Discard &amp; Re-upload</button>
