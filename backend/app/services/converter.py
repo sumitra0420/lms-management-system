@@ -75,7 +75,7 @@ def _iter_blocks(doc: Document):
 # Main conversion
 # ---------------------------------------------------------------------------
 
-def docx_to_markdown(file_bytes: bytes, filename: str) -> str:
+def docx_to_text(file_bytes: bytes, filename: str) -> str:
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
         tmp.write(file_bytes)
         tmp_path = tmp.name

@@ -14,7 +14,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.converter import docx_to_markdown
+from app.services.converter import docx_to_text
 
 DEFAULT_DOCX_DIR = os.path.join(os.path.dirname(__file__), "input")
 
@@ -48,7 +48,7 @@ def batch_convert(docx_dir: str):
             with open(docx_path, "rb") as f:
                 file_bytes = f.read()
 
-            text = docx_to_markdown(file_bytes, filename)
+            text = docx_to_text(file_bytes, filename)
 
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(text)

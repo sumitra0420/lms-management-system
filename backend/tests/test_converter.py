@@ -10,7 +10,7 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.converter import docx_to_markdown
+from app.services.converter import docx_to_text
 
 INPUT_DIR = os.path.join(os.path.dirname(__file__), "input")
 
@@ -42,7 +42,7 @@ def main():
     with open(docx_path, "rb") as f:
         file_bytes = f.read()
 
-    markdown = docx_to_markdown(file_bytes, os.path.basename(docx_path))
+    markdown = docx_to_text(file_bytes, os.path.basename(docx_path))
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(markdown)
