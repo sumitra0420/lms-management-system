@@ -17,3 +17,12 @@ backend/**/__pycache__/
 backend/**/*.pyc
 backend/.env
 backend/tests/output/
+backend/tests/output/**
+backend/tests/input/*.docx
+
+# Terraform
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars

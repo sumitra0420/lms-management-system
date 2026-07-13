@@ -16,12 +16,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.services.converter import docx_to_markdown
 
-DEFAULT_DOCX_DIR = os.path.abspath(os.path.join(
-    os.path.dirname(__file__),
-    "../../data/LearningManagementSystem/services/tests/data/docx",
-))
+DEFAULT_DOCX_DIR = os.path.join(os.path.dirname(__file__), "input")
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "01_converted")
 
 
 def batch_convert(docx_dir: str):
