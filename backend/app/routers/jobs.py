@@ -49,6 +49,31 @@ def start_job(job_id: str, background_tasks: BackgroundTasks, db: Session = Depe
     return {"job_id": job_id, "status": "processing"}
 
 
+@router.get("/jobs/recent")
+def recent_jobs(limit: int = 10, db: Session = Depends(get_db)):
+    jobs = (
+        db.query(UploadJob)
+        .order_by(UploadJob.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    result = []
+    for job in jobs:
+        item = {
+            "job_id":          job.id,
+            "filename":        job.filename,
+            "status":          job.status,
+            "total_questions": None,
+            "file_type":       None,
+            "created_at":      job.created_at.isoformat() if job.created_at else None,
+        }
+        if job.extracted_data:
+            item["total_questions"] = job.extracted_data.total_questions
+            item["file_type"]       = job.extracted_data.file_type
+        result.append(item)
+    return result
+
+
 @router.get("/jobs/{job_id}/status")
 def job_status(job_id: str, db: Session = Depends(get_db)):
     job = db.query(UploadJob).filter(UploadJob.id == job_id).first()

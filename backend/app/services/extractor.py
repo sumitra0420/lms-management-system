@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 
 import boto3
@@ -7,6 +8,8 @@ import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert at extracting quiz questions from vocational education assessment documents.
 
@@ -168,13 +171,26 @@ async def extract(text: str) -> dict:
     Run Model A and Model B in parallel.
     Routes to the correct client based on model ID prefix.
     """
+    model_a_id = os.getenv("MODEL_A_ID", "")
+    model_b_id = os.getenv("MODEL_B_ID", "")
+    logger.info(f"[Extractor] Starting dual extraction | Model A: {model_a_id} | Model B: {model_b_id}")
+
     raw_a, raw_b = await asyncio.gather(
         _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID"),
         _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID"),
     )
+
+    norm_a = _normalise(raw_a, "model_a")
+    norm_b = _normalise(raw_b, "model_b")
+
+    logger.info(f"[Extractor] Model A → {len(norm_a.get('questions', []))} questions | error: {norm_a.get('error')}")
+    logger.info(f"[Extractor] Model B → {len(norm_b.get('questions', []))} questions | error: {norm_b.get('error')}")
+    logger.debug(f"[Extractor] Raw A (first 800 chars):\n{raw_a[:800]}")
+    logger.debug(f"[Extractor] Raw B (first 800 chars):\n{raw_b[:800]}")
+
     return {
         "raw_a": raw_a,
         "raw_b": raw_b,
-        "normalised_a": _normalise(raw_a, "model_a"),
-        "normalised_b": _normalise(raw_b, "model_b"),
+        "normalised_a": norm_a,
+        "normalised_b": norm_b,
     }

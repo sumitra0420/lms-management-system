@@ -1,17 +1,77 @@
+import logging
 import os
 import asyncio
 from difflib import SequenceMatcher
 
 from app.services.extractor import extract
 
+logger = logging.getLogger(__name__)
+
 MAX_RETRIES = 3
 CONSISTENCY_THRESHOLD = float(os.getenv("CONSISTENCY_THRESHOLD", "0.85"))
 
-RETRY_HINT = (
-    "\n\nIMPORTANT: Be thorough and precise. "
-    "Extract EVERY question exactly as written. "
-    "Do not skip any question or merge questions together."
-)
+
+def _build_retry_hint(consistency: dict) -> str:
+    details   = consistency.get("details", {})
+    per_q     = details.get("per_question", [])
+    count_a   = details.get("count_a", 0)
+    count_b   = details.get("count_b", 0)
+
+    issues = []
+
+    # Count mismatch (weighted 20% of final score)
+    if count_a != count_b:
+        issues.append(
+            f"- QUESTION COUNT MISMATCH: one model found {count_a} questions, "
+            f"the other found {count_b}. Count every numbered question separately — "
+            "do not merge multi-part questions and do not skip any."
+        )
+
+    if per_q:
+        avg_text   = sum(q["text_similarity"]   for q in per_q) / len(per_q)
+        avg_answer = sum(q["answer_similarity"]  for q in per_q) / len(per_q)
+        avg_choices= sum(q["choices_similarity"] for q in per_q) / len(per_q)
+        type_mismatches   = sum(1 for q in per_q if q["type_match"]   == 0)
+        points_mismatches = sum(1 for q in per_q if q["points_match"] == 0)
+
+        if avg_answer < 0.80:
+            issues.append(
+                f"- LOW ANSWER SIMILARITY ({avg_answer:.2f}): Copy the ASSESSOR KEY / model "
+                "answer text VERBATIM. Do not paraphrase, summarise, or shorten it."
+            )
+        if avg_text < 0.80:
+            issues.append(
+                f"- LOW QUESTION TEXT SIMILARITY ({avg_text:.2f}): Extract the COMPLETE "
+                "question text exactly as written — do not truncate, rephrase, or omit "
+                "any part of the question."
+            )
+        if avg_choices < 0.75:
+            issues.append(
+                f"- LOW CHOICES SIMILARITY ({avg_choices:.2f}): For multiple-choice questions "
+                "include ALL answer options exactly as listed (A, B, C, D). Mark the correct "
+                "option with \"correct\": true."
+            )
+        if type_mismatches > 0:
+            issues.append(
+                f"- QUESTION TYPE MISMATCH ({type_mismatches} question(s)): Use "
+                "\"multiple_choice\" only when labelled options (A/B/C/D) are present, "
+                "otherwise use \"short_answer\"."
+            )
+        if points_mismatches > 0:
+            issues.append(
+                f"- POINTS MISMATCH ({points_mismatches} question(s)): Read the marks/points "
+                "stated next to each question carefully and use the exact number."
+            )
+
+    if not issues:
+        issues.append("- Re-read every question carefully and ensure nothing is skipped or merged.")
+
+    hint_body = "\n".join(issues)
+    return (
+        f"\n\nIMPORTANT — previous extraction had consistency issues. Fix these specific problems:\n"
+        f"{hint_body}\n"
+        "Re-extract ALL questions from scratch with these corrections applied."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -113,10 +173,15 @@ def score_consistency(normalised_a: dict, normalised_b: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def check_with_retry(text: str) -> dict:
-    last_result = None
+    last_result  = None
+    last_consistency = None
 
     for attempt in range(1, MAX_RETRIES + 1):
-        extract_text = text if attempt == 1 else text + RETRY_HINT
+        if attempt == 1 or last_consistency is None:
+            extract_text = text
+        else:
+            extract_text = text + _build_retry_hint(last_consistency)
+
         result = await extract(extract_text)
         last_result = result
 
@@ -130,13 +195,32 @@ async def check_with_retry(text: str) -> dict:
         consistency = score_consistency(result["normalised_a"], result["normalised_b"])
         result["consistency"] = consistency
         result["attempt"]     = attempt
+        last_consistency      = consistency
+
+        details = consistency["details"]
+        logger.info(
+            f"[Consistency] Attempt {attempt}/{MAX_RETRIES} — "
+            f"score={consistency['score']} consistent={consistency['consistent']} "
+            f"(A:{details['count_a']} Qs, B:{details['count_b']} Qs, "
+            f"count_score={details.get('count_score', 'n/a')}, "
+            f"avg_q_score={details.get('avg_question_score', 'n/a')})"
+        )
+        for i, q in enumerate(details.get("per_question", [])):
+            logger.debug(
+                f"  Q{i+1}: score={q['score']:.4f} | "
+                f"text={q['text_similarity']:.4f} answer={q['answer_similarity']:.4f} "
+                f"type={q['type_match']} points={q['points_match']}"
+            )
 
         if consistency["consistent"]:
+            logger.info(f"[Consistency] PASSED on attempt {attempt}")
             return result
 
         if attempt < MAX_RETRIES:
-            print(f"  Attempt {attempt}/{MAX_RETRIES} — score {consistency['score']} "
-                  f"below threshold {CONSISTENCY_THRESHOLD}, retrying...")
+            logger.info(
+                f"[Consistency] Score {consistency['score']} below threshold "
+                f"{CONSISTENCY_THRESHOLD}, retrying..."
+            )
 
     if last_result and "consistency" not in last_result:
         last_result["consistency"] = {"score": 0.0, "consistent": False,

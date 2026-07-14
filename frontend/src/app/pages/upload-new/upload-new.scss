@@ -221,6 +221,16 @@
     background: #f1f5f9;
     color: #64748b;
   }
+
+  &.badge-flagged {
+    background: #fef9c3;
+    color: #a16207;
+  }
+
+  &.badge-error {
+    background: #fee2e2;
+    color: #dc2626;
+  }
 }
 
 .max-file-error {

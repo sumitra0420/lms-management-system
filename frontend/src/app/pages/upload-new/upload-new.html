@@ -73,27 +73,20 @@
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td><span class="doc-id">DOC-9421</span></td>
-          <td>Intro_to_Psychology_Final.docx</td>
-          <td><span class="badge badge-ready">READY</span></td>
-          <td>42 Items</td>
-          <td class="muted">2 hours ago</td>
-        </tr>
-        <tr>
-          <td><span class="doc-id">DOC-9418</span></td>
-          <td>Global_History_W2_Quiz.pdf</td>
-          <td><span class="badge badge-validating">VALIDATING</span></td>
-          <td>15 Items</td>
-          <td class="muted">5 hours ago</td>
-        </tr>
-        <tr>
-          <td><span class="doc-id">DOC-9405</span></td>
-          <td>Advanced_Calculus_Unit1.docx</td>
-          <td><span class="badge badge-uploaded">UPLOADED</span></td>
-          <td>--</td>
-          <td class="muted">Yesterday</td>
-        </tr>
+        @if (recentJobs().length === 0) {
+          <tr>
+            <td colspan="5" class="muted" style="text-align:center;padding:24px">No uploads yet</td>
+          </tr>
+        }
+        @for (job of recentJobs(); track job.job_id) {
+          <tr>
+            <td><span class="doc-id">{{ shortId(job.job_id) }}</span></td>
+            <td>{{ job.filename }}</td>
+            <td><span class="badge {{ statusClass(job.status) }}">{{ statusLabel(job.status) }}</span></td>
+            <td>{{ job.total_questions != null ? job.total_questions + ' Items' : '--' }}</td>
+            <td class="muted">{{ timeAgo(job.created_at) }}</td>
+          </tr>
+        }
       </tbody>
     </table>
   </div>

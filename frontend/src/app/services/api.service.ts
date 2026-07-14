@@ -41,6 +41,15 @@ export interface PresignResponse {
   s3_key: string;
 }
 
+export interface RecentJob {
+  job_id: string;
+  filename: string;
+  status: string;
+  total_questions: number | null;
+  file_type: string | null;
+  created_at: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
@@ -69,5 +78,9 @@ export class ApiService {
 
   pollJobStatus(jobId: string): Observable<JobStatus> {
     return this.http.get<JobStatus>(`${this.baseUrl}/jobs/${jobId}/status`);
+  }
+
+  getRecentJobs(limit = 10): Observable<RecentJob[]> {
+    return this.http.get<RecentJob[]>(`${this.baseUrl}/jobs/recent?limit=${limit}`);
   }
 }
