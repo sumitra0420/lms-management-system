@@ -12,6 +12,7 @@ export interface FileState {
   date: string;
   status: 'extracting' | 'validated' | 'validation-failed' | 'error';
   resultIndex: number | null;
+  jobId: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -27,7 +28,7 @@ export class UploadStateService {
     this.pipelineResults.set([]);
     this.processingStarted.set(false);
     this.fileStates.set(files.map(f => ({
-      name: f.name, date: 'Just now', status: 'extracting' as const, resultIndex: null,
+      name: f.name, date: 'Just now', status: 'extracting' as const, resultIndex: null, jobId: null,
     })));
     this.uploadedFiles.update(existing => [
       ...files.map(f => ({ name: f.name, size: f.size, uploadedAt: new Date() })),

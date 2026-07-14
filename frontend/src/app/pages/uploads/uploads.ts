@@ -1,9 +1,11 @@
 import { Component, OnInit, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
-import { UploadStateService, FileState } from '../../services/upload-state.service';
-import { ApiService } from '../../services/api.service';
+import { RouterLink } from '@angular/router';
+import { interval } from 'rxjs';
+import { map, startWith, switchMap, takeWhile } from 'rxjs/operators';
+import { ApiService, JobStatus, PipelineResult } from '../../services/api.service';
+import { FileState, UploadStateService } from '../../services/upload-state.service';
 
 type StepStatus = 'completed' | 'processing' | 'pending';
 
@@ -20,7 +22,6 @@ interface PipelineStep {
 })
 export class Uploads implements OnInit {
   searchQuery  = '';
-  activeJobId  = 'LV-8829';
   currentPage  = 1;
   readonly pageSize = 10;
 
@@ -32,7 +33,6 @@ export class Uploads implements OnInit {
   ];
 
   constructor(
-    private router: Router,
     private uploadState: UploadStateService,
     private api: ApiService,
   ) {}
@@ -41,9 +41,7 @@ export class Uploads implements OnInit {
     totalFiles: this.uploadState.uploadedFiles().length,
   }));
 
-  get allFiles(): FileState[] {
-    return this.uploadState.fileStates();
-  }
+  get allFiles(): FileState[] { return this.uploadState.fileStates(); }
 
   get filteredFiles(): FileState[] {
     if (!this.searchQuery) return this.allFiles;
@@ -74,7 +72,7 @@ export class Uploads implements OnInit {
   ngOnInit() {
     const pendingFiles = this.uploadState.pendingFiles();
 
-    // Back navigation (or mid-flight return): processing already started, don't restart
+    // Back navigation: already started, restore state
     if (this.uploadState.processingStarted()) {
       if (this.allDone) {
         this.pipelineSteps = [
@@ -89,17 +87,42 @@ export class Uploads implements OnInit {
 
     if (!pendingFiles.length) return;
 
-    // Fresh upload: mark started and process all files concurrently
     this.uploadState.processingStarted.set(true);
+
     pendingFiles.forEach((file, i) => {
-      this.api.processDocument(file).subscribe({
-        next: (result) => {
-          const resultIndex = this.uploadState.pipelineResults().length;
-          this.uploadState.addResult(result);
-          this.uploadState.updateFileState(i, {
-            status: result.consistent ? 'validated' : 'validation-failed',
-            resultIndex,
-          });
+      this.api.presign(file.name).pipe(
+        // Upload file directly to S3
+        switchMap(({ job_id, presigned_url }) =>
+          this.api.uploadToS3(presigned_url, file).pipe(map(() => job_id))
+        ),
+        // Start background processing
+        switchMap(job_id =>
+          this.api.startJob(job_id).pipe(map(() => job_id))
+        ),
+        // Poll for status every 3s until terminal
+        switchMap(job_id => {
+          this.uploadState.updateFileState(i, { jobId: job_id });
+          return interval(3000).pipe(
+            startWith(0),
+            switchMap(() => this.api.pollJobStatus(job_id)),
+            takeWhile(s => s.status === 'pending' || s.status === 'processing', true),
+          );
+        }),
+      ).subscribe({
+        next: (status: JobStatus) => {
+          const terminal = status.status === 'passed' || status.status === 'flagged' || status.status === 'error';
+          if (!terminal) return;
+
+          if (status.status !== 'error') {
+            const resultIndex = this.uploadState.pipelineResults().length;
+            this.uploadState.addResult(this.toResult(status));
+            this.uploadState.updateFileState(i, {
+              status:      status.status === 'passed' ? 'validated' : 'validation-failed',
+              resultIndex,
+            });
+          } else {
+            this.uploadState.updateFileState(i, { status: 'error' });
+          }
           this.checkAllDone();
         },
         error: (err) => {
@@ -120,5 +143,25 @@ export class Uploads implements OnInit {
       { label: 'Upload',          status: 'pending'   },
     ];
     this.uploadState.clearPending();
+  }
+
+  private toResult(status: JobStatus): PipelineResult {
+    const questions = status.questions ?? [];
+    return {
+      filename:          status.filename,
+      consistent:        status.status === 'passed',
+      consistency_score: status.consistency_score ?? 0,
+      attempt:           status.attempt ?? 1,
+      total_points:      status.total_points ?? 0,
+      questions:         questions.map(q => ({
+        ...q,
+        flagReason: q.flagged
+          ? `Consistency score: ${(q.consistency_score ?? 0).toFixed(2)}. Models disagreed.`
+          : undefined,
+      })),
+      consistency_details: {
+        per_question: questions.map(q => ({ score: q.consistency_score ?? 1 })),
+      },
+    };
   }
 }

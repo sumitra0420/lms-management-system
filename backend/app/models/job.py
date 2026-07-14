@@ -26,23 +26,24 @@ class UploadJob(Base):
     created_at       = Column(DateTime(timezone=True), default=_now)
     updated_at       = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    questions = relationship("ExtractedQuestion", back_populates="job", cascade="all, delete-orphan")
+    extracted_data = relationship("ExtractedData", back_populates="job", uselist=False, cascade="all, delete-orphan")
 
 
-class ExtractedQuestion(Base):
-    __tablename__ = "extracted_questions"
+class ExtractedData(Base):
+    __tablename__ = "extracted_data"
 
-    id               = Column(String, primary_key=True, default=_uuid)
-    job_id           = Column(String, ForeignKey("upload_jobs.id"), nullable=False)
-    question_id      = Column(String)
-    type             = Column(String)
-    text             = Column(String)
-    choices          = Column(JSON, default=list)
-    correct_answer   = Column(String)
-    points           = Column(Float, default=0)
-    feedback         = Column(String)
-    flagged          = Column(Boolean, default=False)
+    id                = Column(String, primary_key=True, default=_uuid)
+    job_id            = Column(String, ForeignKey("upload_jobs.id"), nullable=False)
+    filename          = Column(String, nullable=False)
+    file_type         = Column(String, nullable=True)     # assessor_guide | quiz_short_answer | quiz_multiple_choice | unknown
+    s3_key            = Column(String, nullable=False)
+    raw_text          = Column(String)
+    json_output       = Column(JSON)          # annotated questions array
+    consistent        = Column(Boolean, default=False)
     consistency_score = Column(Float, nullable=True)
-    created_at       = Column(DateTime(timezone=True), default=_now)
+    total_questions   = Column(Integer, nullable=True)
+    total_points      = Column(Float, nullable=True)
+    attempt           = Column(Integer, default=1)
+    created_at        = Column(DateTime(timezone=True), default=_now)
 
-    job = relationship("UploadJob", back_populates="questions")
+    job = relationship("UploadJob", back_populates="extracted_data")

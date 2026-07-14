@@ -10,23 +10,19 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.converter import docx_to_text
+from app.services.converter import docx_to_markdown
 
-INPUT_DIR = os.path.join(os.path.dirname(__file__), "input")
-
-def _default_docx() -> str:
-    files = sorted(f for f in os.listdir(INPUT_DIR) if f.endswith(".docx") and not f.startswith("~$"))
-    if not files:
-        print(f"ERROR: No .docx files found in {INPUT_DIR}")
-        print("Drop a DOCX file into backend/tests/input/ and try again.")
-        sys.exit(1)
-    return os.path.join(INPUT_DIR, files[0])
+DEFAULT_DOCX = os.path.abspath(os.path.join(
+    os.path.dirname(__file__),
+    "../../data/LearningManagementSystem/services/tests/data/docx/"
+    "SITXWHS005_Knowledge_Test_MultipleChoice.docx",
+))
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "01_converted")
 
 
 def main():
-    docx_path = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else _default_docx()
+    docx_path = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_DOCX
 
     if not os.path.exists(docx_path):
         print(f"ERROR: File not found: {docx_path}")
@@ -42,7 +38,7 @@ def main():
     with open(docx_path, "rb") as f:
         file_bytes = f.read()
 
-    markdown = docx_to_text(file_bytes, os.path.basename(docx_path))
+    markdown = docx_to_markdown(file_bytes, os.path.basename(docx_path))
 
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(markdown)

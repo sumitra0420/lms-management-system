@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db, SessionLocal
-from app.models.job import ExtractedQuestion, UploadJob
+from app.models.job import ExtractedData, UploadJob
+from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
 from app.services.converter import docx_to_text
 from app.services.storage import download_file, generate_presigned_url
@@ -63,21 +64,8 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
         "attempt":           job.retry_count,
     }
 
-    if job.status in ("passed", "flagged"):
-        response["questions"] = [
-            {
-                "id":                str(q.question_id),
-                "type":              q.type,
-                "text":              q.text,
-                "choices":           q.choices or [],
-                "correct_answer":    q.correct_answer,
-                "points":            q.points,
-                "feedback":          q.feedback,
-                "flagged":           q.flagged,
-                "consistency_score": q.consistency_score,
-            }
-            for q in job.questions
-        ]
+    if job.status in ("passed", "flagged") and job.extracted_data:
+        response["questions"] = job.extracted_data.json_output or []
 
     return response
 
@@ -91,6 +79,7 @@ def _process_job(job_id: str, s3_key: str, filename: str):
     try:
         file_bytes = download_file(s3_key)
         text       = docx_to_text(file_bytes, filename)
+        file_type  = classify_document_type(filename)
         result     = asyncio.run(check_with_retry(text))
 
         consistency  = result.get("consistency", {})
@@ -98,26 +87,37 @@ def _process_job(job_id: str, s3_key: str, filename: str):
         total_points = sum(float(q.get("points", 0)) for q in questions)
         per_question = consistency.get("details", {}).get("per_question", [])
 
+        annotated = []
         for i, q in enumerate(questions):
             q_score = per_question[i]["score"] if i < len(per_question) else 1.0
-            db.add(ExtractedQuestion(
-                job_id         = job_id,
-                question_id    = str(q.get("id", i + 1)),
-                type           = q.get("type", ""),
-                text           = q.get("text", ""),
-                choices        = q.get("choices", []),
-                correct_answer = q.get("correct_answer", ""),
-                points         = float(q.get("points", 0)),
-                feedback       = q.get("feedback") or "",
-                flagged        = q_score < 0.75,
-                consistency_score = q_score,
-            ))
+            annotated.append({
+                **q,
+                "flagged":           q_score < 0.75,
+                "consistency_score": q_score,
+            })
+
+        consistent = consistency.get("consistent", False)
+        attempt    = result.get("attempt", 1)
+
+        db.add(ExtractedData(
+            job_id            = job_id,
+            filename          = filename,
+            file_type         = file_type,
+            s3_key            = s3_key,
+            raw_text          = text,
+            json_output       = annotated,
+            consistent        = consistent,
+            consistency_score = consistency.get("score", 0),
+            total_questions   = len(annotated),
+            total_points      = total_points,
+            attempt           = attempt,
+        ))
 
         job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
-        job.status            = "passed" if consistency.get("consistent") else "flagged"
+        job.status            = "passed" if consistent else "flagged"
         job.consistency_score = consistency.get("score", 0)
         job.total_points      = total_points
-        job.retry_count       = result.get("attempt", 1)
+        job.retry_count       = attempt
         db.commit()
 
     except Exception as exc:
