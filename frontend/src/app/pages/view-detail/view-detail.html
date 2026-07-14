@@ -48,7 +48,14 @@
     <div class="questions-panel">
       <div class="questions-header">
         <h2>Question Preview ({{ questions.length }})</h2>
-        <span class="points-label">Estimated Points: {{ estimatedPoints }} | Consistency: {{ consistencyScore | number:'1.0-2' }}</span>
+        <div class="header-right">
+          @if (hasEdits) {
+            <select class="version-select" [value]="viewMode" (change)="setViewMode($any($event.target).value)">
+              <option value="edited">Edited Version</option>
+              <option value="original">Original (AI)</option>
+            </select>
+          }
+        </div>
       </div>
 
       @for (q of questions; track q.id; let i = $index) {

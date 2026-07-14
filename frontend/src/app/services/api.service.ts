@@ -52,6 +52,7 @@ export interface JobDetail {
   has_edits: boolean;
   file_type: string | null;
   questions: PipelineQuestion[];
+  original_questions: PipelineQuestion[];
 }
 
 export interface RecentJob {

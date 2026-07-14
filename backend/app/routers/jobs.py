@@ -78,16 +78,17 @@ def job_detail(job_id: str, db: Session = Depends(get_db)):
         has_edits = data.edited_json is not None
 
     return {
-        "job_id":            job.id,
-        "filename":          job.filename,
-        "status":            job.status,
-        "consistent":        job.status == "passed",
-        "consistency_score": job.consistency_score or 0,
-        "total_points":      job.total_points or 0,
-        "attempt":           job.retry_count or 1,
-        "has_edits":         has_edits,
-        "file_type":         data.file_type if data else None,
-        "questions":         questions,
+        "job_id":             job.id,
+        "filename":           job.filename,
+        "status":             job.status,
+        "consistent":         job.status == "passed",
+        "consistency_score":  job.consistency_score or 0,
+        "total_points":       job.total_points or 0,
+        "attempt":            job.retry_count or 1,
+        "has_edits":          has_edits,
+        "file_type":          data.file_type if data else None,
+        "questions":          questions,
+        "original_questions": data.json_output or [] if data else [],
     }
 
 

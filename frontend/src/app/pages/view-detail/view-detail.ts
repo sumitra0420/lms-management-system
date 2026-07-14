@@ -23,6 +23,9 @@ export class ViewDetail implements OnInit {
   editDraft: PipelineQuestion | null = null;
   saving    = false;
   hasEdits  = false;
+  viewMode: 'edited' | 'original' = 'edited';
+  private _originalQuestions: PipelineQuestion[] = [];
+  private _editedQuestions: PipelineQuestion[] = [];
   private _backendMeta: object | null = null;
 
   pipelineSteps = [
@@ -57,12 +60,15 @@ export class ViewDetail implements OnInit {
         this.consistencyScore = detail.consistency_score;
         this.mode             = detail.consistent ? 'pass' : 'fail';
         this.hasEdits         = detail.has_edits;
-        this.questions        = detail.questions.map(q => ({
+        const mapQ = (q: PipelineQuestion) => ({
           ...q,
           flagReason: q.flagged
             ? `Consistency score: ${(q.consistency_score ?? 0).toFixed(2)}. Models disagreed.`
             : undefined,
-        }));
+        });
+        this._editedQuestions   = detail.questions.map(mapQ);
+        this._originalQuestions = detail.original_questions.map(mapQ);
+        this.questions          = this._editedQuestions;
         this._backendMeta = {
           filename:          detail.filename,
           consistent:        detail.consistent,
@@ -74,6 +80,11 @@ export class ViewDetail implements OnInit {
         this.cdr.detectChanges();
       },
     });
+  }
+
+  setViewMode(mode: 'edited' | 'original') {
+    this.viewMode = mode;
+    this.questions = mode === 'original' ? this._originalQuestions : this._editedQuestions;
   }
 
   // ── Editing ────────────────────────────────────────────────────────────────
@@ -111,9 +122,10 @@ export class ViewDetail implements OnInit {
     this.questions = this.questions.map((q, i) =>
       i === this.editingIndex ? { ...this.editDraft! } : q
     );
-    this.editingIndex = null;
-    this.editDraft    = null;
-    this.hasEdits     = true;
+    this.editingIndex   = null;
+    this.editDraft      = null;
+    this.hasEdits       = true;
+    this._editedQuestions = [...this.questions];
     this.persistEdits();
   }
 

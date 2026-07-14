@@ -117,7 +117,26 @@
   flex-shrink: 0;
 
   h2 { font-size: 15px; font-weight: 600; color: #0f172a; }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .points-label { font-size: 13px; color: #64748b; }
+}
+
+.version-select {
+  padding: 5px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: #0f172a;
+  background: #fff;
+  cursor: pointer;
+  outline: none;
+  &:focus { border-color: #2563eb; }
 }
 
 .question-card {
