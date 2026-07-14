@@ -1,0 +1,58 @@
+<div class="review-page">
+  <div class="page-header">
+    <div>
+      <h1>Review Extractions</h1>
+      <p>Select a file to review its extracted questions and answers.</p>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" fill="none" stroke="#94a3b8" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" placeholder="Search by filename..." [(ngModel)]="searchQuery" />
+    </div>
+    <span class="result-count">{{ filtered.length }} file{{ filtered.length !== 1 ? 's' : '' }}</span>
+  </div>
+
+  @if (loading()) {
+    <div class="empty-state">Loading...</div>
+  } @else if (filtered.length === 0) {
+    <div class="empty-state">No extractions found.</div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Filename</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Questions</th>
+            <th>Date</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (job of filtered; track job.job_id) {
+            <tr>
+              <td class="filename-cell">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#64748b" stroke-width="2" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                {{ job.filename }}
+              </td>
+              <td class="type-cell">{{ fileTypeLabel(job.file_type) }}</td>
+              <td><span class="badge {{ statusClass(job.status) }}">{{ statusLabel(job.status) }}</span></td>
+              <td>{{ job.total_questions != null ? job.total_questions : '—' }}</td>
+              <td class="muted">{{ timeAgo(job.created_at) }}</td>
+              <td>
+                @if (job.status === 'passed' || job.status === 'flagged') {
+                  <button class="btn-review" (click)="openReview(job)">Review</button>
+                } @else {
+                  <span class="muted">{{ job.status }}</span>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>

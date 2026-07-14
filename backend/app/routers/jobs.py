@@ -17,6 +17,9 @@ router = APIRouter()
 class PresignRequest(BaseModel):
     filename: str
 
+class EditRequest(BaseModel):
+    questions: list
+
 
 @router.post("/jobs/presign")
 def presign(req: PresignRequest, db: Session = Depends(get_db)):
@@ -47,6 +50,45 @@ def start_job(job_id: str, background_tasks: BackgroundTasks, db: Session = Depe
 
     background_tasks.add_task(_process_job, job_id, job.s3_key, job.filename)
     return {"job_id": job_id, "status": "processing"}
+
+
+@router.patch("/jobs/{job_id}/questions")
+def save_edits(job_id: str, body: EditRequest, db: Session = Depends(get_db)):
+    job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.extracted_data:
+        raise HTTPException(status_code=404, detail="No extracted data for this job")
+    job.extracted_data.edited_json = body.questions
+    db.commit()
+    return {"status": "saved", "job_id": job_id}
+
+
+@router.get("/jobs/{job_id}/detail")
+def job_detail(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    data      = job.extracted_data
+    questions = []
+    has_edits = False
+    if data:
+        questions = data.edited_json or data.json_output or []
+        has_edits = data.edited_json is not None
+
+    return {
+        "job_id":            job.id,
+        "filename":          job.filename,
+        "status":            job.status,
+        "consistent":        job.status == "passed",
+        "consistency_score": job.consistency_score or 0,
+        "total_points":      job.total_points or 0,
+        "attempt":           job.retry_count or 1,
+        "has_edits":         has_edits,
+        "file_type":         data.file_type if data else None,
+        "questions":         questions,
+    }
 
 
 @router.get("/jobs/recent")

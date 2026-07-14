@@ -41,6 +41,19 @@ export interface PresignResponse {
   s3_key: string;
 }
 
+export interface JobDetail {
+  job_id: string;
+  filename: string;
+  status: string;
+  consistent: boolean;
+  consistency_score: number;
+  total_points: number;
+  attempt: number;
+  has_edits: boolean;
+  file_type: string | null;
+  questions: PipelineQuestion[];
+}
+
 export interface RecentJob {
   job_id: string;
   filename: string;
@@ -82,5 +95,13 @@ export class ApiService {
 
   getRecentJobs(limit = 10): Observable<RecentJob[]> {
     return this.http.get<RecentJob[]>(`${this.baseUrl}/jobs/recent?limit=${limit}`);
+  }
+
+  getJobDetail(jobId: string): Observable<JobDetail> {
+    return this.http.get<JobDetail>(`${this.baseUrl}/jobs/${jobId}/detail`);
+  }
+
+  saveEdits(jobId: string, questions: PipelineQuestion[]): Observable<{ status: string }> {
+    return this.http.patch<{ status: string }>(`${this.baseUrl}/jobs/${jobId}/questions`, { questions });
   }
 }

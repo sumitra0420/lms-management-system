@@ -103,8 +103,8 @@
               </span>
             </td>
             <td>
-              @if (file.status !== 'extracting' && file.resultIndex !== null) {
-                <a [routerLink]="['/uploads/detail']" [queryParams]="{index: file.resultIndex}" class="view-details">View Details</a>
+              @if (file.status !== 'extracting' && file.jobId !== null) {
+                <a [routerLink]="['/uploads/detail']" [queryParams]="{jobId: file.jobId}" class="view-details">View Details</a>
               } @else {
                 <span class="view-details disabled">View Details</span>
               }

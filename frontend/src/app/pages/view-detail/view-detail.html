@@ -51,57 +51,105 @@
         <span class="points-label">Estimated Points: {{ estimatedPoints }} | Consistency: {{ consistencyScore | number:'1.0-2' }}</span>
       </div>
 
-      @for (q of questions; track q.id) {
-        <div class="question-card" [class.flagged-card]="mode === 'fail' && q.flagged">
-          <div class="question-top">
-            <div class="type-row">
-              <span class="question-type">{{ q.type }}</span>
-              @if (mode === 'fail' && q.flagged) {
-                <span class="flag-tag">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
-                  Low Confidence
-                </span>
-              }
-            </div>
-            @if (mode === 'fail' && q.flagged) {
-              <div class="flag-actions">
-                <button class="link-btn">Edit</button>
-                <button class="link-btn resolve">Resolve</button>
+      @for (q of questions; track q.id; let i = $index) {
+        <div class="question-card"
+             [class.flagged-card]="mode === 'fail' && q.flagged"
+             [class.editing-card]="editingIndex === i">
+
+          <!-- ── View mode ── -->
+          @if (editingIndex !== i) {
+            <div class="question-top">
+              <div class="type-row">
+                <span class="question-type">{{ q.type }}</span>
+                @if (mode === 'fail' && q.flagged) {
+                  <span class="flag-tag">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+                    Low Confidence
+                  </span>
+                }
               </div>
-            } @else if (q.type === 'Multiple Choice') {
-              <button class="edit-btn">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#94a3b8" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              <button class="edit-btn" (click)="startEdit(i)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                Edit
               </button>
-            }
-          </div>
-
-          <p class="question-text">{{ q.id }}. {{ q.text }}</p>
-
-          @if (q.type === 'short_answer') {
-            <div class="model-answer">
-              <span class="answer-label">Model Answer:</span>
-              <span>{{ q.correct_answer }}</span>
             </div>
-          } @else {
-            <div class="choices">
-              @for (choice of q.choices; track choice.text) {
-                <div class="choice" [class.correct]="choice.correct">
-                  <div class="radio" [class.selected]="choice.correct"></div>
-                  <span>{{ choice.text }}</span>
-                  @if (choice.correct) {
-                    <svg class="correct-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+
+            <div class="qa-section">
+              <span class="qa-label">Question</span>
+              <p class="question-text">{{ q.id }}. {{ q.text }}</p>
+            </div>
+
+            <div class="qa-section">
+              <span class="qa-label">Answer</span>
+              @if (q.type === 'short_answer') {
+                <p class="model-answer-text">{{ q.correct_answer }}</p>
+              } @else {
+                <div class="choices">
+                  @for (choice of q.choices; track choice.text) {
+                    <div class="choice" [class.correct]="choice.correct">
+                      <div class="radio" [class.selected]="choice.correct"></div>
+                      <span>{{ choice.text }}</span>
+                      @if (choice.correct) {
+                        <svg class="correct-icon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#16a34a" stroke-width="2.5" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                      }
+                    </div>
                   }
                 </div>
               }
             </div>
+
+            @if (mode === 'fail' && q.flagged && q.flagReason) {
+              <div class="flag-reason">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="#ea580c" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span><strong>Reason for Flag:</strong> {{ q.flagReason }}</span>
+              </div>
+            }
           }
 
-          @if (mode === 'fail' && q.flagged && q.flagReason) {
-            <div class="flag-reason">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="#ea580c" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <span><strong>Reason for Flag:</strong> {{ q.flagReason }}</span>
+          <!-- ── Edit mode ── -->
+          @if (editingIndex === i && editDraft) {
+            <div class="edit-header">
+              <span class="edit-title">Editing {{ q.id }}</span>
+              <div class="edit-actions">
+                <button class="btn-cancel" (click)="cancelEdit()">Cancel</button>
+                <button class="btn-save" (click)="saveEdit()">Save</button>
+              </div>
+            </div>
+
+            <div class="edit-field">
+              <label>Question Text</label>
+              <textarea [(ngModel)]="editDraft.text" rows="3"></textarea>
+            </div>
+
+            @if (q.type === 'short_answer') {
+              <div class="edit-field">
+                <label>Model Answer</label>
+                <textarea [(ngModel)]="editDraft.correct_answer" rows="4"></textarea>
+              </div>
+            } @else {
+              <div class="edit-field">
+                <label>Answer Choices <span class="hint">(select correct answer)</span></label>
+                @for (choice of editDraft.choices; track $index; let ci = $index) {
+                  <div class="edit-choice">
+                    <input type="radio" name="correct_{{ q.id }}"
+                           [checked]="choice.correct"
+                           (change)="setCorrectChoice(ci)">
+                    <input type="text" class="choice-input"
+                           [value]="choice.text"
+                           (input)="updateChoiceText(ci, $any($event.target).value)">
+                  </div>
+                }
+              </div>
+            }
+
+            <div class="edit-field-row">
+              <div class="edit-field small">
+                <label>Points</label>
+                <input type="number" [(ngModel)]="editDraft.points" min="0">
+              </div>
             </div>
           }
+
         </div>
       }
     </div>
@@ -120,7 +168,6 @@
         </div>
         <div class="code-block">
           <div class="code-toolbar">
-            <span class="filename">quiz_schema_v2.json</span>
             <button class="copy-btn" (click)="copyRaw()">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
               {{ copied ? 'Copied!' : 'Copy Raw' }}

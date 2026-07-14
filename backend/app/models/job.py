@@ -38,7 +38,8 @@ class ExtractedData(Base):
     file_type         = Column(String, nullable=True)     # assessor_guide | quiz_short_answer | quiz_multiple_choice | unknown
     s3_key            = Column(String, nullable=False)
     raw_text          = Column(String)
-    json_output       = Column(JSON)          # annotated questions array
+    json_output       = Column(JSON)          # immutable AI extraction
+    edited_json       = Column(JSON, nullable=True)  # user-edited version
     consistent        = Column(Boolean, default=False)
     consistency_score = Column(Float, nullable=True)
     total_questions   = Column(Integer, nullable=True)

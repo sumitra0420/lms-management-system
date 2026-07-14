@@ -184,21 +184,156 @@
   }
 
   .edit-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 4px;
     display: flex;
     align-items: center;
-    &:hover svg { stroke: #64748b; }
+    gap: 5px;
+    background: none;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+    &:hover { border-color: #2563eb; color: #2563eb; }
+  }
+
+  .qa-section {
+    margin-bottom: 12px;
+  }
+
+  .qa-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #94a3b8;
+    margin-bottom: 6px;
   }
 
   .question-text {
     font-size: 14px;
     font-weight: 500;
     color: #0f172a;
-    margin-bottom: 12px;
     line-height: 1.5;
+    margin: 0;
+  }
+
+  .model-answer-text {
+    font-size: 13.5px;
+    color: #334155;
+    line-height: 1.6;
+    margin: 0;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border-left: 3px solid #2563eb;
+    border-radius: 0 6px 6px 0;
+  }
+
+  // ── Edit mode ──────────────────────────────────────────────────────────────
+
+  &.editing-card {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px #dbeafe;
+  }
+
+  .edit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .edit-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2563eb;
+  }
+
+  .edit-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-cancel {
+    padding: 5px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    color: #64748b;
+    cursor: pointer;
+    &:hover { background: #f1f5f9; }
+  }
+
+  .btn-save {
+    padding: 5px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #2563eb;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    &:hover { background: #1d4ed8; }
+  }
+
+  .edit-field {
+    margin-bottom: 14px;
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 6px;
+
+      .hint {
+        font-weight: 400;
+        color: #94a3b8;
+      }
+    }
+
+    textarea, input[type="text"], input[type="number"] {
+      width: 100%;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 13.5px;
+      color: #0f172a;
+      resize: vertical;
+      box-sizing: border-box;
+      font-family: inherit;
+      &:focus { outline: none; border-color: #2563eb; }
+    }
+
+    input[type="number"] { width: 80px; resize: none; }
+  }
+
+  .edit-field-row {
+    display: flex;
+    gap: 16px;
+
+    .edit-field.small { flex: 0 0 auto; }
+  }
+
+  .edit-choice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+
+    input[type="radio"] { flex-shrink: 0; cursor: pointer; }
+
+    .choice-input {
+      flex: 1;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 13.5px;
+      &:focus { outline: none; border-color: #2563eb; }
+    }
   }
 }
 

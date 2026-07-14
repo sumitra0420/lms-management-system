@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { interval } from 'rxjs';
 import { map, startWith, switchMap, takeWhile } from 'rxjs/operators';
-import { ApiService, JobStatus, PipelineResult } from '../../services/api.service';
+import { ApiService, JobStatus } from '../../services/api.service';
 import { FileState, UploadStateService } from '../../services/upload-state.service';
 
 type StepStatus = 'completed' | 'processing' | 'pending';
@@ -114,11 +114,8 @@ export class Uploads implements OnInit {
           if (!terminal) return;
 
           if (status.status !== 'error') {
-            const resultIndex = this.uploadState.pipelineResults().length;
-            this.uploadState.addResult(this.toResult(status));
             this.uploadState.updateFileState(i, {
-              status:      status.status === 'passed' ? 'validated' : 'validation-failed',
-              resultIndex,
+              status: status.status === 'passed' ? 'validated' : 'validation-failed',
             });
           } else {
             this.uploadState.updateFileState(i, { status: 'error' });
@@ -145,23 +142,5 @@ export class Uploads implements OnInit {
     this.uploadState.clearPending();
   }
 
-  private toResult(status: JobStatus): PipelineResult {
-    const questions = status.questions ?? [];
-    return {
-      filename:          status.filename,
-      consistent:        status.status === 'passed',
-      consistency_score: status.consistency_score ?? 0,
-      attempt:           status.attempt ?? 1,
-      total_points:      status.total_points ?? 0,
-      questions:         questions.map(q => ({
-        ...q,
-        flagReason: q.flagged
-          ? `Consistency score: ${(q.consistency_score ?? 0).toFixed(2)}. Models disagreed.`
-          : undefined,
-      })),
-      consistency_details: {
-        per_question: questions.map(q => ({ score: q.consistency_score ?? 1 })),
-      },
-    };
-  }
 }
+

@@ -1,80 +1,136 @@
-import { Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { UploadStateService } from '../../services/upload-state.service';
-import { PipelineQuestion } from '../../services/api.service';
+import { ApiService, PipelineQuestion } from '../../services/api.service';
 
 @Component({
   selector: 'app-view-detail',
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink],
   templateUrl: './view-detail.html',
   styleUrl: './view-detail.scss'
 })
 export class ViewDetail implements OnInit {
   mode: 'pass' | 'fail' = 'pass';
-
-  filename = '';
+  filename        = '';
   estimatedPoints = 0;
   consistencyScore = 0;
   questions: PipelineQuestion[] = [];
-  copied = false;
+  copied   = false;
+  jobId: string | null = null;
+
+  editingIndex: number | null = null;
+  editDraft: PipelineQuestion | null = null;
+  saving    = false;
+  hasEdits  = false;
+  private _backendMeta: object | null = null;
 
   pipelineSteps = [
-    { label: 'Upload',      status: 'completed' },
-    { label: 'Extraction',  status: 'completed' },
-    { label: 'Validation',  status: 'completed' },
-    { label: 'Sync',        status: 'pending' },
+    { label: 'Upload',     status: 'completed' },
+    { label: 'Extraction', status: 'completed' },
+    { label: 'Validation', status: 'completed' },
+    { label: 'Sync',       status: 'pending'   },
   ];
 
   constructor(
     private route: ActivatedRoute,
-    private uploadState: UploadStateService,
+    private api: ApiService,
+    private cdr: ChangeDetectorRef,
   ) {}
 
-  get flagCount() {
-    return this.questions.filter(q => q.flagged).length;
-  }
+  get flagCount() { return this.questions.filter(q => q.flagged).length; }
+  get isEditing()  { return this.editingIndex !== null; }
 
   ngOnInit() {
-    const indexParam = this.route.snapshot.queryParamMap.get('index');
-    const index = indexParam !== null ? +indexParam : 0;
-    const result = this.uploadState.pipelineResults()[index] ?? null;
-
-    if (result) {
-      this.filename         = result.filename;
-      this.estimatedPoints  = result.total_points;
-      this.consistencyScore = result.consistency_score;
-      this.mode             = result.consistent ? 'pass' : 'fail';
-
-      const perQuestion: any[] = result.consistency_details?.per_question ?? [];
-      this.questions = result.questions.map((q, i) => {
-        const qScore = perQuestion[i]?.score ?? 1;
-        return {
-          ...q,
-          flagged:   qScore < 0.75,
-          flagReason: qScore < 0.75
-            ? `Consistency score: ${qScore.toFixed(2)}. Models disagreed on this question.`
-            : undefined,
-        };
-      });
-    } else {
-      this.mode = this.route.snapshot.data['mode'] ?? 'pass';
+    const jobId = this.route.snapshot.queryParamMap.get('jobId');
+    if (jobId) {
+      this.loadFromBackend(jobId);
     }
   }
 
+  private loadFromBackend(jobId: string) {
+    this.jobId = jobId;
+    this.api.getJobDetail(jobId).subscribe({
+      next: detail => {
+        this.filename         = detail.filename;
+        this.estimatedPoints  = detail.total_points;
+        this.consistencyScore = detail.consistency_score;
+        this.mode             = detail.consistent ? 'pass' : 'fail';
+        this.hasEdits         = detail.has_edits;
+        this.questions        = detail.questions.map(q => ({
+          ...q,
+          flagReason: q.flagged
+            ? `Consistency score: ${(q.consistency_score ?? 0).toFixed(2)}. Models disagreed.`
+            : undefined,
+        }));
+        this._backendMeta = {
+          filename:          detail.filename,
+          consistent:        detail.consistent,
+          consistency_score: detail.consistency_score,
+          total_questions:   detail.questions.length,
+          total_points:      detail.total_points,
+          attempt:           detail.attempt,
+        };
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  // ── Editing ────────────────────────────────────────────────────────────────
+
+  startEdit(index: number) {
+    this.editingIndex = index;
+    this.editDraft = JSON.parse(JSON.stringify(this.questions[index]));
+  }
+
+  cancelEdit() {
+    this.editingIndex = null;
+    this.editDraft    = null;
+  }
+
+  setCorrectChoice(choiceIndex: number) {
+    if (!this.editDraft) return;
+    this.editDraft.choices = this.editDraft.choices.map((c, i) => ({
+      ...c, correct: i === choiceIndex,
+    }));
+    this.editDraft.correct_answer = this.editDraft.choices[choiceIndex].text;
+  }
+
+  updateChoiceText(choiceIndex: number, value: string) {
+    if (!this.editDraft) return;
+    this.editDraft.choices = this.editDraft.choices.map((c, i) =>
+      i === choiceIndex ? { ...c, text: value } : c
+    );
+    if (this.editDraft.choices[choiceIndex].correct) {
+      this.editDraft.correct_answer = value;
+    }
+  }
+
+  saveEdit() {
+    if (this.editingIndex === null || !this.editDraft) return;
+    this.questions = this.questions.map((q, i) =>
+      i === this.editingIndex ? { ...this.editDraft! } : q
+    );
+    this.editingIndex = null;
+    this.editDraft    = null;
+    this.hasEdits     = true;
+    this.persistEdits();
+  }
+
+  private persistEdits() {
+    if (!this.jobId) return;
+    this.saving = true;
+    this.api.saveEdits(this.jobId, this.questions).subscribe({
+      next: () => this.saving = false,
+      error: () => this.saving = false,
+    });
+  }
+
+  // ── Metadata panel ─────────────────────────────────────────────────────────
+
   get metadataJson() {
-    const indexParam = this.route.snapshot.queryParamMap.get('index');
-    const index = indexParam !== null ? +indexParam : 0;
-    const result = this.uploadState.pipelineResults()[index] ?? null;
-    if (!result) return '';
-    return JSON.stringify({
-      filename:          result.filename,
-      consistent:        result.consistent,
-      consistency_score: result.consistency_score,
-      total_questions:   result.questions.length,
-      total_points:      result.total_points,
-      attempt:           result.attempt,
-    }, null, 2);
+    if (!this._backendMeta) return '';
+    return JSON.stringify(this._backendMeta, null, 2);
   }
 
   copyRaw() {

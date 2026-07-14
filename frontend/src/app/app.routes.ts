@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { Uploads } from './pages/uploads/uploads';
 import { UploadNew } from './pages/upload-new/upload-new';
 import { ViewDetail } from './pages/view-detail/view-detail';
+import { Review } from './pages/review/review';
 
 export const routes: Routes = [
   { path: '', redirectTo: 'uploads', pathMatch: 'full' },
@@ -9,4 +10,5 @@ export const routes: Routes = [
   { path: 'uploads/processing', component: Uploads },
   { path: 'uploads/detail', component: ViewDetail, data: { mode: 'pass' } },
   { path: 'uploads/detail/fail', component: ViewDetail, data: { mode: 'fail' } },
+  { path: 'review', component: Review },
 ];
