@@ -102,12 +102,19 @@ def recent_jobs(limit: int = 10, db: Session = Depends(get_db)):
     )
     result = []
     for job in jobs:
+        flag_count = 0
+        if job.extracted_data and job.extracted_data.json_output:
+            flag_count = sum(
+                1 for q in job.extracted_data.json_output
+                if (q.get("consistency_score") or 1.0) < 0.90
+            )
         item = {
             "job_id":          job.id,
             "filename":        job.filename,
             "status":          job.status,
             "total_questions": None,
             "file_type":       None,
+            "flag_count":      flag_count,
             "created_at":      job.created_at.isoformat() if job.created_at else None,
         }
         if job.extracted_data:

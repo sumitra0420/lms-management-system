@@ -61,6 +61,7 @@ export interface RecentJob {
   status: string;
   total_questions: number | null;
   file_type: string | null;
+  flag_count: number;
   created_at: string;
 }
 

@@ -35,18 +35,31 @@ export class Review implements OnInit {
     this.router.navigate(['/uploads/detail'], { queryParams: { jobId: job.job_id } });
   }
 
+  effectiveStatus(job: RecentJob): string {
+    if (job.status === 'passed' && job.flag_count > 2) return 'review-required';
+    return job.status;
+  }
+
   statusLabel(status: string): string {
     const map: Record<string, string> = {
-      passed: 'Passed', flagged: 'Flagged',
-      processing: 'Processing', pending: 'Pending', error: 'Error',
+      passed:          'Passed',
+      'review-required': 'Review Required',
+      flagged:         'Flagged',
+      processing:      'Processing',
+      pending:         'Pending',
+      error:           'Error',
     };
     return map[status] ?? status;
   }
 
   statusClass(status: string): string {
     const map: Record<string, string> = {
-      passed: 'badge-passed', flagged: 'badge-flagged',
-      processing: 'badge-processing', pending: 'badge-pending', error: 'badge-error',
+      passed:          'badge-passed',
+      'review-required': 'badge-flagged',
+      flagged:         'badge-flagged',
+      processing:      'badge-processing',
+      pending:         'badge-pending',
+      error:           'badge-error',
     };
     return map[status] ?? '';
   }

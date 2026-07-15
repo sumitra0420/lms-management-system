@@ -41,7 +41,14 @@ export class ViewDetail implements OnInit {
     private cdr: ChangeDetectorRef,
   ) {}
 
-  get flagCount() { return this.questions.filter(q => q.flagged).length; }
+  get flagCount() { return this.questions.filter(q => (q.consistency_score ?? 1) < 0.90).length; }
+
+  scoreClass(score: number | undefined): 'high' | 'mid' | 'low' {
+    const s = score ?? 1;
+    if (s >= 0.90) return 'high';
+    if (s >= 0.80) return 'mid';
+    return 'low';
+  }
   get isEditing()  { return this.editingIndex !== null; }
 
   ngOnInit() {
@@ -58,7 +65,6 @@ export class ViewDetail implements OnInit {
         this.filename         = detail.filename;
         this.estimatedPoints  = detail.total_points;
         this.consistencyScore = detail.consistency_score;
-        this.mode             = detail.consistent ? 'pass' : 'fail';
         this.hasEdits         = detail.has_edits;
         const mapQ = (q: PipelineQuestion) => ({
           ...q,
@@ -69,6 +75,10 @@ export class ViewDetail implements OnInit {
         this._editedQuestions   = detail.questions.map(mapQ);
         this._originalQuestions = detail.original_questions.map(mapQ);
         this.questions          = this._editedQuestions;
+
+        const questionFlagCount = this._editedQuestions.filter(q => (q.consistency_score ?? 1) < 0.90).length;
+        this.mode = (detail.consistent && questionFlagCount <= 2) ? 'pass' : 'fail';
+
         this._backendMeta = {
           filename:          detail.filename,
           consistent:        detail.consistent,

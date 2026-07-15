@@ -60,7 +60,7 @@
 
       @for (q of questions; track q.id; let i = $index) {
         <div class="question-card"
-             [class.flagged-card]="mode === 'fail' && q.flagged"
+             [class.flagged-card]="scoreClass(q.consistency_score) !== 'high'"
              [class.editing-card]="editingIndex === i">
 
           <!-- ── View mode ── -->
@@ -68,8 +68,14 @@
             <div class="question-top">
               <div class="type-row">
                 <span class="question-type">{{ q.type }}</span>
-                @if (mode === 'fail' && q.flagged) {
-                  <span class="flag-tag">
+                @if (scoreClass(q.consistency_score) === 'mid') {
+                  <span class="flag-tag flag-review">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    Review
+                  </span>
+                }
+                @if (scoreClass(q.consistency_score) === 'low') {
+                  <span class="flag-tag flag-low">
                     <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
                     Low Confidence
                   </span>
@@ -105,10 +111,10 @@
               }
             </div>
 
-            @if (mode === 'fail' && q.flagged && q.flagReason) {
+            @if (scoreClass(q.consistency_score) !== 'high') {
               <div class="flag-reason">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="#ea580c" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                <span><strong>Reason for Flag:</strong> {{ q.flagReason }}</span>
+                <span>Consistency score: {{ (q.consistency_score ?? 1) | number:'1.2-2' }} — models had lower agreement on this question.</span>
               </div>
             }
           }
@@ -166,12 +172,9 @@
       <div class="metadata-card">
         <div class="metadata-header">
           <h3>Extraction Metadata</h3>
-          <div class="meta-badges">
-            @if (mode === 'fail') {
-              <span class="flag-count-badge">● {{ flagCount }} Flags</span>
-            }
-            <span class="valid-badge"><span class="dot"></span> Syntactically Valid</span>
-          </div>
+          @if (flagCount > 0) {
+            <span class="flag-count-badge">● {{ flagCount }} need review</span>
+          }
         </div>
         <div class="code-block">
           <div class="code-toolbar">
@@ -180,8 +183,39 @@
               {{ copied ? 'Copied!' : 'Copy Raw' }}
             </button>
           </div>
-          <pre class="code-content" [class.has-flags]="mode === 'fail'">{{ metadataJson }}</pre>
+          <pre class="code-content">{{ metadataJson }}</pre>
         </div>
+
+        <!-- Per-question scores -->
+        @if (questions.length > 0) {
+          <div class="per-q-section">
+            <div class="per-q-title">Question Scores</div>
+            @for (q of questions; track q.id; let i = $index) {
+              <div class="per-q-row" (click)="startEdit(i)">
+                <span class="per-q-label">Q{{ i + 1 }}</span>
+                <div class="per-q-bar-wrap">
+                  <div class="per-q-bar bar-{{ scoreClass(q.consistency_score) }}"
+                       [style.width.%]="(q.consistency_score ?? 1) * 100">
+                  </div>
+                </div>
+                <span class="per-q-score score-{{ scoreClass(q.consistency_score) }}">
+                  {{ (q.consistency_score ?? 1) | number:'1.2-2' }}
+                </span>
+                @if (scoreClass(q.consistency_score) === 'mid') {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#b45309" stroke-width="2" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                }
+                @if (scoreClass(q.consistency_score) === 'low') {
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" stroke="#dc2626" stroke-width="2" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+                }
+              </div>
+            }
+            <div class="per-q-legend">
+              <span class="legend-item"><span class="legend-dot dot-high"></span> Pass ≥ 0.90</span>
+              <span class="legend-item"><span class="legend-dot dot-mid"></span> Review 0.80–0.89</span>
+              <span class="legend-item"><span class="legend-dot dot-low"></span> Fail &lt; 0.80</span>
+            </div>
+          </div>
+        }
       </div>
     </div>
 
