@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(messa
 
 from app.db import Base, engine
 import app.models.job  # noqa: F401 — registers models with SQLAlchemy
-from app.routers import documents, jobs
+from app.routers import jobs
 
 app = FastAPI(title="LMS Management System")
 
@@ -33,5 +33,4 @@ def create_tables():
             conn.execute(text(stmt))
         conn.commit()
 
-app.include_router(documents.router, prefix="/api")
 app.include_router(jobs.router, prefix="/api")
