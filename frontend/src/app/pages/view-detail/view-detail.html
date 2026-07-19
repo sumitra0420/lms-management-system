@@ -95,7 +95,15 @@
             <div class="qa-section">
               <span class="qa-label">Answer</span>
               @if (q.type === 'short_answer') {
-                <p class="model-answer-text">{{ q.correct_answer }}</p>
+                @if (answerBullets(q.correct_answer).length > 0) {
+                  <ul class="answer-bullets">
+                    @for (bullet of answerBullets(q.correct_answer); track bullet) {
+                      <li>{{ bullet }}</li>
+                    }
+                  </ul>
+                } @else {
+                  <p class="model-answer-text">{{ q.correct_answer }}</p>
+                }
               } @else {
                 <div class="choices">
                   @for (choice of q.choices; track choice.text) {

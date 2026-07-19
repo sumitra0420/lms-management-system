@@ -251,6 +251,22 @@
     border-radius: 0 6px 6px 0;
   }
 
+  .answer-bullets {
+    font-size: 13.5px;
+    color: #334155;
+    line-height: 1.6;
+    margin: 0;
+    padding: 10px 12px 10px 28px;
+    background: #f8fafc;
+    border-left: 3px solid #2563eb;
+    border-radius: 0 6px 6px 0;
+    list-style: disc;
+
+    li + li {
+      margin-top: 4px;
+    }
+  }
+
   // ── Edit mode ──────────────────────────────────────────────────────────────
 
   &.editing-card {

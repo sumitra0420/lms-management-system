@@ -43,6 +43,10 @@ export class ViewDetail implements OnInit {
 
   get flagCount() { return this.questions.filter(q => (q.consistency_score ?? 1) < 0.90).length; }
 
+  answerBullets(answer: string): string[] {
+    return answer.includes(' | ') ? answer.split(' | ') : [];
+  }
+
   scoreClass(score: number | undefined): 'high' | 'mid' | 'low' {
     const s = score ?? 1;
     if (s >= 0.90) return 'high';
