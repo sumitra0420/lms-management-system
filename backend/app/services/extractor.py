@@ -61,28 +61,68 @@ def _extract_json_from_text(text: str) -> str:
     return text
 
 
+def _recover_partial_json(text: str) -> dict | None:
+    """
+    Try to salvage complete question objects from a truncated or malformed
+    JSON string.  Scans backwards from the end for the last position where
+    a complete question object closes ('}'), rebuilds a valid JSON envelope,
+    and returns the parsed dict — or None if nothing could be recovered.
+    """
+    import re
+    match = re.search(r'"questions"\s*:\s*\[', text)
+    if not match:
+        return None
+
+    prefix  = text[:match.end()]   # everything up to and including '['
+    content = text[match.end():]   # everything after '['
+
+    # Scan backwards: each '}' could be the end of the last complete question.
+    for m in reversed(list(re.finditer(r'\}', content))):
+        candidate = prefix + content[:m.end()].rstrip(',').rstrip() + ']}'
+        try:
+            data = json.loads(candidate)
+            if data.get('questions'):
+                return data
+        except json.JSONDecodeError:
+            continue
+
+    return None
+
+
 def _normalise(raw_json: str, source: str) -> dict:
+    json_text = _extract_json_from_text(raw_json)
     try:
-        data = json.loads(_extract_json_from_text(raw_json))
+        data = json.loads(json_text)
     except json.JSONDecodeError as e:
-        return {"error": f"JSON parse failed ({source}): {e}", "questions": []}
+        # Primary parse failed — attempt partial recovery before giving up.
+        # Handles cases where the model truncates mid-response or emits an
+        # unescaped character inside a long JSON string.
+        recovered = _recover_partial_json(json_text)
+        if recovered and recovered.get("questions"):
+            logger.warning(
+                f"[Extractor] Partial JSON recovery for {source}: "
+                f"salvaged {len(recovered['questions'])} questions (original error: {e})"
+            )
+            data = recovered
+        else:
+            return {"error": f"JSON parse failed ({source}): {e}", "questions": []}
 
     normalised_questions = []
     for q in data.get("questions", []):
         choices = []
-        for c in q.get("choices", []):
+        for c in q.get("choices") or []:
             choices.append({
-                "text": str(c.get("text", "")),
-                "correct": bool(c.get("correct", False)),
+                "text":    str(c.get("text") or ""),
+                "correct": bool(c.get("correct") or False),
             })
         normalised_questions.append({
-            "id": str(q.get("id", "")),
-            "type": str(q.get("type", "short_answer")),
-            "text": str(q.get("text", "")),
-            "choices": choices,
-            "correct_answer": str(q.get("correct_answer", "")),
-            "points": float(q.get("points", 0)),
-            "feedback": str(q.get("feedback", "")),
+            "id":             str(q.get("id") or ""),
+            "type":           str(q.get("type") or "short_answer"),
+            "text":           str(q.get("text") or ""),
+            "choices":        choices,
+            "correct_answer": str(q.get("correct_answer") or ""),
+            "points":         float(q.get("points") or 0),
+            "feedback":       str(q.get("feedback") or ""),
         })
 
     return {"questions": normalised_questions}

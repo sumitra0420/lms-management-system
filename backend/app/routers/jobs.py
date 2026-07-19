@@ -8,7 +8,7 @@ from app.db import get_db, SessionLocal
 from app.models.job import ExtractedData, UploadJob
 from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
-from app.services.converter import docx_to_text
+from app.services.converter import extract_document
 from app.services.storage import download_file, generate_presigned_url
 
 router = APIRouter()
@@ -152,19 +152,25 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
 def _process_job(job_id: str, s3_key: str, filename: str):
     db = SessionLocal()
     try:
-        file_bytes = download_file(s3_key)
-        text       = docx_to_text(file_bytes, filename)
-        file_type  = classify_document_type(filename)
+        file_bytes             = download_file(s3_key)
+        text, instructions     = extract_document(file_bytes, filename)
+        file_type              = classify_document_type(filename)
         result     = asyncio.run(check_with_retry(text))
 
         consistency  = result.get("consistency", {})
         questions    = result["normalised_a"].get("questions", [])
         total_points = sum(float(q.get("points", 0)) for q in questions)
         per_question = consistency.get("details", {}).get("per_question", [])
+        consistent   = consistency.get("consistent", False)
+
+        # When no per-question data is available (all retries had extraction
+        # errors), default to 0.0 on a failed job so questions show as needing
+        # review rather than falsely appearing as fully consistent (1.0).
+        missing_score_default = 1.0 if consistent else 0.0
 
         annotated = []
         for i, q in enumerate(questions):
-            q_score = per_question[i]["score"] if i < len(per_question) else 1.0
+            q_score = per_question[i]["score"] if i < len(per_question) else missing_score_default
             annotated.append({
                 **q,
                 "flagged":           q_score < 0.75,
@@ -180,6 +186,7 @@ def _process_job(job_id: str, s3_key: str, filename: str):
             file_type         = file_type,
             s3_key            = s3_key,
             raw_text          = text,
+            instructions_text = instructions or None,
             json_output       = annotated,
             consistent        = consistent,
             consistency_score = consistency.get("score", 0),

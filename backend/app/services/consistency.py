@@ -173,8 +173,13 @@ def score_consistency(normalised_a: dict, normalised_b: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 async def check_with_retry(text: str) -> dict:
-    last_result  = None
+    last_result      = None
     last_consistency = None
+    # Track the attempt that produced the best per-question score data.
+    # When later retries fail (e.g. Model B returns malformed JSON), we still
+    # want the per-question scores from the best successful attempt so the UI
+    # can show meaningful individual scores instead of defaulting to 1.0.
+    best_result_with_data: dict | None = None
 
     for attempt in range(1, MAX_RETRIES + 1):
         if attempt == 1 or last_consistency is None:
@@ -212,6 +217,15 @@ async def check_with_retry(text: str) -> dict:
                 f"type={q['type_match']} points={q['points_match']}"
             )
 
+        # Keep track of the best attempt that has real per-question scores
+        if details.get("per_question"):
+            prev_best_score = (
+                best_result_with_data["consistency"]["score"]
+                if best_result_with_data else -1
+            )
+            if consistency["score"] > prev_best_score:
+                best_result_with_data = result
+
         if consistency["consistent"]:
             logger.info(f"[Consistency] PASSED on attempt {attempt}")
             return result
@@ -222,9 +236,30 @@ async def check_with_retry(text: str) -> dict:
                 f"{CONSISTENCY_THRESHOLD}, retrying..."
             )
 
+    # All retries exhausted without passing.
     if last_result and "consistency" not in last_result:
-        last_result["consistency"] = {"score": 0.0, "consistent": False,
-                                      "max_retries_reached": True}
+        # Last attempt had an extraction error — no consistency was computed.
+        # Borrow the best per-question details from a previous attempt so the
+        # UI can display meaningful individual question scores.
+        borrowed_details = (
+            best_result_with_data["consistency"]["details"]
+            if best_result_with_data else {}
+        )
+        borrowed_score = (
+            best_result_with_data["consistency"]["score"]
+            if best_result_with_data else 0.0
+        )
+        last_result["consistency"] = {
+            "score":              borrowed_score,
+            "consistent":         False,
+            "max_retries_reached": True,
+            "details":            borrowed_details,
+        }
+        if best_result_with_data:
+            logger.info(
+                f"[Consistency] Borrowed per-question scores from best attempt "
+                f"(score={borrowed_score}) for final failure result"
+            )
     else:
         last_result["consistency"]["max_retries_reached"] = True
 
