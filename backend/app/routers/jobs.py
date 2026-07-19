@@ -170,11 +170,13 @@ def _process_job(job_id: str, s3_key: str, filename: str):
 
         annotated = []
         for i, q in enumerate(questions):
-            q_score = per_question[i]["score"] if i < len(per_question) else missing_score_default
+            pq = per_question[i] if i < len(per_question) else {}
+            q_score = pq.get("score", missing_score_default)
             annotated.append({
                 **q,
                 "flagged":           q_score < 0.75,
                 "consistency_score": q_score,
+                "conflicts":         pq.get("conflicts", {}),
             })
 
         consistent = consistency.get("consistent", False)

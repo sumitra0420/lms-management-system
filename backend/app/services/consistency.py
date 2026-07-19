@@ -10,6 +10,16 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 CONSISTENCY_THRESHOLD = float(os.getenv("CONSISTENCY_THRESHOLD", "0.85"))
 
+# Per-field similarity thresholds below which A and B are considered "in
+# conflict" on that specific field — surfaced to the UI so a human can pick
+# which model's value to keep, instead of silently defaulting to Model A.
+FIELD_CONFLICT_THRESHOLDS = {
+    "text":           0.90,
+    "correct_answer": 0.90,
+    "choices":        0.85,
+    "feedback":       0.80,
+}
+
 
 def _build_retry_hint(consistency: dict) -> str:
     details   = consistency.get("details", {})
@@ -121,6 +131,23 @@ def _score_pair(qa: dict, qb: dict) -> dict:
         feedback_sim * 0.05
     )
 
+    # Field-level conflicts: fields where A and B disagree enough that a
+    # human should pick between them, rather than silently keeping A's value.
+    conflicts = {}
+    field_sims = {
+        "text":           text_sim,
+        "correct_answer": answer_sim,
+        "choices":        choices_sim,
+        "feedback":       feedback_sim,
+    }
+    for field, sim in field_sims.items():
+        if sim < FIELD_CONFLICT_THRESHOLDS[field]:
+            conflicts[field] = {"value_a": qa.get(field), "value_b": qb.get(field)}
+    if type_match == 0:
+        conflicts["type"] = {"value_a": qa.get("type"), "value_b": qb.get("type")}
+    if points_match == 0:
+        conflicts["points"] = {"value_a": qa.get("points"), "value_b": qb.get("points")}
+
     return {
         "text_similarity":    round(text_sim,     4),
         "answer_similarity":  round(answer_sim,   4),
@@ -129,6 +156,7 @@ def _score_pair(qa: dict, qb: dict) -> dict:
         "points_match":       points_match,
         "feedback_similarity":round(feedback_sim, 4),
         "score":              round(score,         4),
+        "conflicts":          conflicts,
     }
 
 

@@ -4,6 +4,21 @@ import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, PipelineQuestion } from '../../services/api.service';
 
+interface ConflictEntry {
+  field: string;
+  valueA: any;
+  valueB: any;
+}
+
+const CONFLICT_FIELD_LABELS: Record<string, string> = {
+  text:            'Question Text',
+  correct_answer:  'Model Answer',
+  choices:         'Choices',
+  feedback:        'Feedback',
+  type:            'Question Type',
+  points:          'Points',
+};
+
 @Component({
   selector: 'app-view-detail',
   imports: [CommonModule, FormsModule, RouterLink],
@@ -54,6 +69,43 @@ export class ViewDetail implements OnInit {
     return 'low';
   }
   get isEditing()  { return this.editingIndex !== null; }
+
+  // ── Conflict resolution (Model A vs Model B) ─────────────────────────────
+
+  conflictEntries(q: PipelineQuestion): ConflictEntry[] {
+    if (!q.conflicts) return [];
+    return Object.entries(q.conflicts).map(([field, v]) => ({
+      field, valueA: v.value_a, valueB: v.value_b,
+    }));
+  }
+
+  fieldLabel(field: string): string {
+    return CONFLICT_FIELD_LABELS[field] ?? field;
+  }
+
+  displayConflictValue(field: string, value: any): string {
+    if (field === 'choices' && Array.isArray(value)) {
+      return value.map((c: any) => `${c.correct ? '✓ ' : ''}${c.text}`).join('  •  ') || '(none)';
+    }
+    if (value === null || value === undefined || value === '') return '(empty)';
+    return String(value);
+  }
+
+  resolveConflict(index: number, field: string, pick: 'a' | 'b') {
+    const q = this.questions[index];
+    const conflict = q.conflicts?.[field];
+    if (!conflict) return;
+
+    const value = pick === 'a' ? conflict.value_a : conflict.value_b;
+    const remainingConflicts = { ...q.conflicts };
+    delete remainingConflicts[field];
+
+    const updated: PipelineQuestion = { ...q, [field]: value, conflicts: remainingConflicts };
+    this.questions = this.questions.map((qq, i) => i === index ? updated : qq);
+    this.hasEdits         = true;
+    this._editedQuestions = [...this.questions];
+    this.persistEdits();
+  }
 
   ngOnInit() {
     const jobId = this.route.snapshot.queryParamMap.get('jobId');

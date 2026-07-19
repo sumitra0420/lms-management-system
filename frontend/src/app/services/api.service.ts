@@ -2,6 +2,11 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, from } from 'rxjs';
 
+export interface FieldConflict {
+  value_a: any;
+  value_b: any;
+}
+
 export interface PipelineQuestion {
   id: string;
   type: string;
@@ -13,6 +18,7 @@ export interface PipelineQuestion {
   flagged?: boolean;
   flagReason?: string;
   consistency_score?: number;
+  conflicts?: { [field: string]: FieldConflict };
 }
 
 export interface PipelineResult {
