@@ -23,6 +23,7 @@ app.add_middleware(
 # ALTER TABLE … ADD COLUMN IF NOT EXISTS is idempotent — safe to run on every startup.
 _MIGRATIONS = [
     "ALTER TABLE extracted_data ADD COLUMN IF NOT EXISTS instructions_text TEXT",
+    "ALTER TABLE upload_jobs ADD COLUMN IF NOT EXISTS error_message TEXT",
 ]
 
 @app.on_event("startup")

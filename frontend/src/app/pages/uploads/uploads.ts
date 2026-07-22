@@ -118,13 +118,13 @@ export class Uploads implements OnInit {
               status: status.status === 'passed' ? 'validated' : 'validation-failed',
             });
           } else {
-            this.uploadState.updateFileState(i, { status: 'error' });
+            this.uploadState.updateFileState(i, { status: 'error', errorMessage: status.error_message ?? undefined });
           }
           this.checkAllDone();
         },
         error: (err) => {
           console.error(`[Uploads] Error processing ${file.name}:`, err);
-          this.uploadState.updateFileState(i, { status: 'error' });
+          this.uploadState.updateFileState(i, { status: 'error', errorMessage: err?.error?.detail ?? err?.message });
           this.checkAllDone();
         }
       });

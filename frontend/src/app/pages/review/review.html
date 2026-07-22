@@ -39,7 +39,7 @@
                 {{ job.filename }}
               </td>
               <td class="type-cell">{{ fileTypeLabel(job.file_type) }}</td>
-              <td><span class="badge {{ statusClass(effectiveStatus(job)) }}">{{ statusLabel(effectiveStatus(job)) }}</span></td>
+              <td><span class="badge {{ statusClass(effectiveStatus(job)) }}" [title]="job.error_message ?? ''">{{ statusLabel(effectiveStatus(job)) }}</span></td>
               <td>{{ job.total_questions != null ? job.total_questions : '—' }}</td>
               <td class="muted">{{ timeAgo(job.created_at) }}</td>
               <td>

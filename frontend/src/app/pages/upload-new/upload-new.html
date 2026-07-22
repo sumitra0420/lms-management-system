@@ -31,13 +31,13 @@
       </div>
     } @else {
       <p class="drop-title">Drag and drop your document here</p>
-      <p class="drop-sub">Supports .docx and .pdf files up to 50MB</p>
+      <p class="drop-sub">Supports .docx files up to 50MB</p>
     }
 
     <div class="drop-actions">
       <label class="btn-select">
         Select File from Computer
-        <input type="file" accept=".docx,.pdf" multiple (change)="onFileSelected($event)" hidden />
+        <input type="file" accept=".docx" multiple (change)="onFileSelected($event)" hidden />
       </label>
       <button class="btn-upload" (click)="uploadNow()" [disabled]="!selectedFiles.length">
         Upload Now

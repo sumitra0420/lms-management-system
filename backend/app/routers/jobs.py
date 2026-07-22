@@ -100,6 +100,7 @@ def job_detail(job_id: str, db: Session = Depends(get_db)):
         "file_type":          data.file_type if data else None,
         "questions":          questions,
         "original_questions": data.json_output or [] if data else [],
+        "error_message":      job.error_message,
     }
 
 
@@ -127,6 +128,7 @@ def recent_jobs(limit: int = 10, db: Session = Depends(get_db)):
             "file_type":       None,
             "flag_count":      flag_count,
             "created_at":      job.created_at.isoformat() if job.created_at else None,
+            "error_message":   job.error_message,
         }
         if job.extracted_data:
             item["total_questions"] = job.extracted_data.total_questions
@@ -148,6 +150,7 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
         "consistency_score": job.consistency_score,
         "total_points":      job.total_points,
         "attempt":           job.retry_count,
+        "error_message":     job.error_message,
     }
 
     if job.status in ("passed", "flagged") and job.extracted_data:
@@ -243,7 +246,8 @@ def _process_job(job_id: str, s3_key: str, filename: str):
         db.rollback()
         job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
         if job:
-            job.status = "error"
+            job.status        = "error"
+            job.error_message = str(exc)[:500]
             db.commit()
         raise exc
     finally:

@@ -86,7 +86,7 @@
             </td>
             <td class="muted">{{ file.date }}</td>
             <td>
-              <span class="badge badge-{{ file.status }}">
+              <span class="badge badge-{{ file.status }}" [title]="file.errorMessage ?? ''">
                 @if (file.status === 'validation-failed') {
                   <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                 }

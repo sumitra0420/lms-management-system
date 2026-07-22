@@ -41,6 +41,7 @@ export interface JobStatus {
   total_points: number | null;
   attempt: number;
   questions?: PipelineQuestion[];
+  error_message?: string | null;
 }
 
 export interface PresignResponse {
@@ -61,6 +62,7 @@ export interface JobDetail {
   file_type: string | null;
   questions: PipelineQuestion[];
   original_questions: PipelineQuestion[];
+  error_message?: string | null;
 }
 
 export interface RecentJob {
@@ -71,6 +73,7 @@ export interface RecentJob {
   file_type: string | null;
   flag_count: number;
   created_at: string;
+  error_message?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })

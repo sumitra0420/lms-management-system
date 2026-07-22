@@ -20,6 +20,7 @@ class UploadJob(Base):
     filename         = Column(String, nullable=False)
     s3_key           = Column(String, nullable=False)
     status           = Column(String, default="pending")   # pending | processing | passed | flagged | error
+    error_message    = Column(String, nullable=True)       # human-readable reason when status == "error"
     retry_count      = Column(Integer, default=0)
     consistency_score = Column(Float, nullable=True)
     total_points     = Column(Float, nullable=True)

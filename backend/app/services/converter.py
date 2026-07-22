@@ -49,9 +49,11 @@ HOW TO ADD A NEW TEMPLATE
 from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.table import Table
+from docx.opc.exceptions import PackageNotFoundError
 import re
 import tempfile
 import os
+import zipfile
 
 
 # ===========================================================================
@@ -445,10 +447,15 @@ def _instructions_from_doc(doc: Document, template: str) -> str:
             if col0.lower().startswith("knowledge test"):
                 continue
 
-            # Use Col 1 for content (right column carries the actual text).
-            # For 2-column tables Col 1 is the content column.
-            # For 3-column SA tables Col 1 and Col 2 are merged — same text.
-            content_cell = row.cells[1] if len(row.cells) > 1 else row.cells[0]
+            # Pick the content cell by content length rather than a fixed
+            # column index — robust to columns being added, removed, or
+            # reordered. Column 0 is always the label ("Instructions",
+            # "Rubric", …); the content lives in whichever remaining cell
+            # has the most text (for 3-column SA tables, columns 1 and 2
+            # are merged duplicates of the same text — length-based
+            # selection handles that too, since either one wins equally).
+            candidates  = row.cells[1:] or row.cells[:1]
+            content_cell = max(candidates, key=lambda c: len(c.text))
             content_lines = [
                 p.text.strip()
                 for p in content_cell.paragraphs
@@ -519,7 +526,18 @@ def extract_document(file_bytes: bytes, filename: str) -> tuple[str, str]:
         tmp_path = tmp.name
 
     try:
-        doc      = Document(tmp_path)
+        try:
+            doc = Document(tmp_path)
+        except (zipfile.BadZipFile, KeyError, PackageNotFoundError) as e:
+            # PackageNotFoundError/BadZipFile: the file isn't a zip archive
+            # at all (e.g. a .pdf, .txt, or image renamed to .docx).
+            # KeyError: it IS a zip but missing required Word package parts
+            # (e.g. a .xlsx/.pptx renamed to .docx, or a corrupted file).
+            raise ValueError(
+                f"'{filename}' doesn't appear to be a valid .docx file "
+                f"(it may be a different format, renamed, or corrupted): {e}"
+            ) from e
+
         template = _detect_template(doc)
 
         # --- Question content (raw_text) ------------------------------------

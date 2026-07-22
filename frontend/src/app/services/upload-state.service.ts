@@ -13,6 +13,7 @@ export interface FileState {
   status: 'extracting' | 'validated' | 'validation-failed' | 'error';
   resultIndex: number | null;
   jobId: string | null;
+  errorMessage?: string;
 }
 
 @Injectable({ providedIn: 'root' })
