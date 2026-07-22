@@ -75,6 +75,21 @@ def save_edits(job_id: str, body: EditRequest, db: Session = Depends(get_db)):
     return {"status": "saved", "job_id": job_id}
 
 
+def _flag_count(job: UploadJob) -> int:
+    """
+    Number of questions whose per-question consistency_score is below the
+    review threshold. This is the single source of truth for "does this
+    job need a human to look at it, even though it technically passed" —
+    every endpoint/page must use this same number, not recompute its own.
+    """
+    if not job.extracted_data or not job.extracted_data.json_output:
+        return 0
+    return sum(
+        1 for q in job.extracted_data.json_output
+        if (q.get("consistency_score") or 1.0) < 0.90
+    )
+
+
 @router.get("/jobs/{job_id}/detail")
 def job_detail(job_id: str, db: Session = Depends(get_db)):
     job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
@@ -101,6 +116,7 @@ def job_detail(job_id: str, db: Session = Depends(get_db)):
         "questions":          questions,
         "original_questions": data.json_output or [] if data else [],
         "error_message":      job.error_message,
+        "flag_count":         _flag_count(job),
     }
 
 
@@ -114,19 +130,13 @@ def recent_jobs(limit: int = 10, db: Session = Depends(get_db)):
     )
     result = []
     for job in jobs:
-        flag_count = 0
-        if job.extracted_data and job.extracted_data.json_output:
-            flag_count = sum(
-                1 for q in job.extracted_data.json_output
-                if (q.get("consistency_score") or 1.0) < 0.90
-            )
         item = {
             "job_id":          job.id,
             "filename":        job.filename,
             "status":          job.status,
             "total_questions": None,
             "file_type":       None,
-            "flag_count":      flag_count,
+            "flag_count":      _flag_count(job),
             "created_at":      job.created_at.isoformat() if job.created_at else None,
             "error_message":   job.error_message,
         }
@@ -151,6 +161,7 @@ def job_status(job_id: str, db: Session = Depends(get_db)):
         "total_points":      job.total_points,
         "attempt":           job.retry_count,
         "error_message":     job.error_message,
+        "flag_count":        _flag_count(job),
     }
 
     if job.status in ("passed", "flagged") and job.extracted_data:

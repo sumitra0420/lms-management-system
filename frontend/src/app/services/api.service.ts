@@ -42,6 +42,7 @@ export interface JobStatus {
   attempt: number;
   questions?: PipelineQuestion[];
   error_message?: string | null;
+  flag_count?: number;
 }
 
 export interface PresignResponse {
@@ -63,6 +64,7 @@ export interface JobDetail {
   questions: PipelineQuestion[];
   original_questions: PipelineQuestion[];
   error_message?: string | null;
+  flag_count?: number;
 }
 
 export interface RecentJob {
@@ -75,6 +77,37 @@ export interface RecentJob {
   created_at: string;
   error_message?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Canonical job status — the single source of truth for what a job's state
+// means, used by every page (dashboard, uploads, review, view-detail) so
+// they can never disagree. A job that raw-passed but still has several
+// low-confidence questions is NOT "ready" — it needs review, same as an
+// outright flagged job.
+// ---------------------------------------------------------------------------
+
+export type CanonicalStatus = 'pending' | 'processing' | 'needs_review' | 'passed' | 'error';
+
+const FLAG_COUNT_REVIEW_THRESHOLD = 2;
+
+export function canonicalStatus(rawStatus: string, flagCount: number | null | undefined): CanonicalStatus {
+  switch (rawStatus) {
+    case 'pending':    return 'pending';
+    case 'processing': return 'processing';
+    case 'error':      return 'error';
+    case 'flagged':    return 'needs_review';
+    case 'passed':     return (flagCount ?? 0) > FLAG_COUNT_REVIEW_THRESHOLD ? 'needs_review' : 'passed';
+    default:           return 'pending';
+  }
+}
+
+export const CANONICAL_STATUS_LABEL: Record<CanonicalStatus, string> = {
+  pending:      'Pending',
+  processing:   'Processing',
+  needs_review: 'Review Required',
+  passed:       'Passed',
+  error:        'Error',
+};
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {

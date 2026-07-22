@@ -2,7 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { ApiService, RecentJob } from '../../services/api.service';
+import { ApiService, CanonicalStatus, canonicalStatus, RecentJob } from '../../services/api.service';
 import { UploadStateService } from '../../services/upload-state.service';
 
 @Component({
@@ -75,26 +75,26 @@ export class UploadNew implements OnInit {
     return jobId.slice(0, 8).toUpperCase();
   }
 
-  statusLabel(status: string): string {
-    const map: Record<string, string> = {
-      passed:     'READY',
-      flagged:    'FLAGGED',
-      processing: 'VALIDATING',
-      pending:    'PENDING',
-      error:      'ERROR',
+  statusLabel(job: RecentJob): string {
+    const map: Record<CanonicalStatus, string> = {
+      passed:       'READY',
+      needs_review: 'REVIEW REQUIRED',
+      processing:   'VALIDATING',
+      pending:      'PENDING',
+      error:        'ERROR',
     };
-    return map[status] ?? status.toUpperCase();
+    return map[canonicalStatus(job.status, job.flag_count)];
   }
 
-  statusClass(status: string): string {
-    const map: Record<string, string> = {
-      passed:     'badge-ready',
-      flagged:    'badge-flagged',
-      processing: 'badge-validating',
-      pending:    'badge-uploaded',
-      error:      'badge-error',
+  statusClass(job: RecentJob): string {
+    const map: Record<CanonicalStatus, string> = {
+      passed:       'badge-ready',
+      needs_review: 'badge-flagged',
+      processing:   'badge-validating',
+      pending:      'badge-uploaded',
+      error:        'badge-error',
     };
-    return map[status] ?? '';
+    return map[canonicalStatus(job.status, job.flag_count)];
   }
 
   timeAgo(iso: string): string {

@@ -43,7 +43,7 @@
               <td>{{ job.total_questions != null ? job.total_questions : '—' }}</td>
               <td class="muted">{{ timeAgo(job.created_at) }}</td>
               <td>
-                @if (job.status === 'passed' || job.status === 'flagged') {
+                @if (effectiveStatus(job) === 'passed' || effectiveStatus(job) === 'needs_review') {
                   <button class="btn-review" (click)="openReview(job)">Review</button>
                 } @else {
                   <span class="muted">{{ job.status }}</span>

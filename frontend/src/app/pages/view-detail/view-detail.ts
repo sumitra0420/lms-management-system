@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { ApiService, PipelineQuestion } from '../../services/api.service';
+import { ApiService, canonicalStatus, PipelineQuestion } from '../../services/api.service';
 
 interface ConflictEntry {
   field: string;
@@ -132,8 +132,7 @@ export class ViewDetail implements OnInit {
         this._originalQuestions = detail.original_questions.map(mapQ);
         this.questions          = this._editedQuestions;
 
-        const questionFlagCount = this._editedQuestions.filter(q => (q.consistency_score ?? 1) < 0.90).length;
-        this.mode = (detail.consistent && questionFlagCount <= 2) ? 'pass' : 'fail';
+        this.mode = canonicalStatus(detail.status, detail.flag_count) === 'passed' ? 'pass' : 'fail';
 
         this._backendMeta = {
           filename:          detail.filename,

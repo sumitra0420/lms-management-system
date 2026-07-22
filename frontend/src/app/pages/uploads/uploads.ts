@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { interval } from 'rxjs';
 import { map, startWith, switchMap, takeWhile } from 'rxjs/operators';
-import { ApiService, JobStatus } from '../../services/api.service';
+import { ApiService, CANONICAL_STATUS_LABEL, CanonicalStatus, canonicalStatus, JobStatus } from '../../services/api.service';
 import { FileState, UploadStateService } from '../../services/upload-state.service';
 
 type StepStatus = 'completed' | 'processing' | 'pending';
@@ -56,17 +56,11 @@ export class Uploads implements OnInit {
 
   get allDone(): boolean {
     const states = this.uploadState.fileStates();
-    return states.length > 0 && states.every(f => f.status !== 'extracting');
+    return states.length > 0 && states.every(f => f.status !== 'pending' && f.status !== 'processing');
   }
 
-  getStatusLabel(status: FileState['status']): string {
-    const map: Record<FileState['status'], string> = {
-      'validation-failed': 'Validation Failed',
-      'validated':         'Validation Passed',
-      'error':             'Error',
-      'extracting':        'Extracting',
-    };
-    return map[status];
+  getStatusLabel(status: CanonicalStatus): string {
+    return CANONICAL_STATUS_LABEL[status];
   }
 
   ngOnInit() {
@@ -110,17 +104,14 @@ export class Uploads implements OnInit {
         }),
       ).subscribe({
         next: (status: JobStatus) => {
-          const terminal = status.status === 'passed' || status.status === 'flagged' || status.status === 'error';
-          if (!terminal) return;
-
-          if (status.status !== 'error') {
-            this.uploadState.updateFileState(i, {
-              status: status.status === 'passed' ? 'validated' : 'validation-failed',
-            });
-          } else {
-            this.uploadState.updateFileState(i, { status: 'error', errorMessage: status.error_message ?? undefined });
+          const cs = canonicalStatus(status.status, status.flag_count);
+          this.uploadState.updateFileState(i, {
+            status:       cs,
+            errorMessage: cs === 'error' ? (status.error_message ?? undefined) : undefined,
+          });
+          if (cs === 'passed' || cs === 'needs_review' || cs === 'error') {
+            this.checkAllDone();
           }
-          this.checkAllDone();
         },
         error: (err) => {
           console.error(`[Uploads] Error processing ${file.name}:`, err);

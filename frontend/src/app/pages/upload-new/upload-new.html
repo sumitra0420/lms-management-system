@@ -82,7 +82,7 @@
           <tr>
             <td><span class="doc-id">{{ shortId(job.job_id) }}</span></td>
             <td>{{ job.filename }}</td>
-            <td><span class="badge {{ statusClass(job.status) }}">{{ statusLabel(job.status) }}</span></td>
+            <td><span class="badge {{ statusClass(job) }}" [title]="job.error_message ?? ''">{{ statusLabel(job) }}</span></td>
             <td>{{ job.total_questions != null ? job.total_questions + ' Items' : '--' }}</td>
             <td class="muted">{{ timeAgo(job.created_at) }}</td>
           </tr>

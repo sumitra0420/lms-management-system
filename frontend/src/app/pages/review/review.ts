@@ -2,7 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { ApiService, RecentJob } from '../../services/api.service';
+import { ApiService, CANONICAL_STATUS_LABEL, CanonicalStatus, canonicalStatus, RecentJob } from '../../services/api.service';
 
 @Component({
   selector: 'app-review',
@@ -35,33 +35,23 @@ export class Review implements OnInit {
     this.router.navigate(['/uploads/detail'], { queryParams: { jobId: job.job_id } });
   }
 
-  effectiveStatus(job: RecentJob): string {
-    if (job.status === 'passed' && job.flag_count > 2) return 'review-required';
-    return job.status;
+  effectiveStatus(job: RecentJob): CanonicalStatus {
+    return canonicalStatus(job.status, job.flag_count);
   }
 
-  statusLabel(status: string): string {
-    const map: Record<string, string> = {
-      passed:          'Passed',
-      'review-required': 'Review Required',
-      flagged:         'Flagged',
-      processing:      'Processing',
-      pending:         'Pending',
-      error:           'Error',
-    };
-    return map[status] ?? status;
+  statusLabel(status: CanonicalStatus): string {
+    return CANONICAL_STATUS_LABEL[status];
   }
 
-  statusClass(status: string): string {
-    const map: Record<string, string> = {
-      passed:          'badge-passed',
-      'review-required': 'badge-flagged',
-      flagged:         'badge-flagged',
-      processing:      'badge-processing',
-      pending:         'badge-pending',
-      error:           'badge-error',
+  statusClass(status: CanonicalStatus): string {
+    const map: Record<CanonicalStatus, string> = {
+      passed:       'badge-passed',
+      needs_review: 'badge-flagged',
+      processing:   'badge-processing',
+      pending:      'badge-pending',
+      error:        'badge-error',
     };
-    return map[status] ?? '';
+    return map[status];
   }
 
   fileTypeLabel(type: string | null): string {

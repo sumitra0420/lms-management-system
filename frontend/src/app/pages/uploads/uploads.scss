@@ -264,22 +264,27 @@
   font-size: 12px;
   font-weight: 500;
 
-  &.badge-validation-failed {
+  &.badge-error {
     background: #fef2f2;
     color: #dc2626;
   }
 
-  &.badge-validated {
+  &.badge-passed {
     background: #f0fdf4;
     color: #16a34a;
   }
 
-  &.badge-uploaded {
-    background: #f0fdf4;
-    color: #16a34a;
+  &.badge-pending {
+    background: #f1f5f9;
+    color: #64748b;
   }
 
-  &.badge-extracting {
+  &.badge-needs_review {
+    background: #fef9c3;
+    color: #a16207;
+  }
+
+  &.badge-processing {
     background: #eff6ff;
     color: #2563eb;
   }

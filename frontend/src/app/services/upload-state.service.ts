@@ -1,5 +1,5 @@
 import { Injectable, signal } from '@angular/core';
-import { PipelineResult } from './api.service';
+import { CanonicalStatus, PipelineResult } from './api.service';
 
 export interface UploadedFile {
   name: string;
@@ -10,7 +10,7 @@ export interface UploadedFile {
 export interface FileState {
   name: string;
   date: string;
-  status: 'extracting' | 'validated' | 'validation-failed' | 'error';
+  status: CanonicalStatus;
   resultIndex: number | null;
   jobId: string | null;
   errorMessage?: string;
@@ -29,7 +29,7 @@ export class UploadStateService {
     this.pipelineResults.set([]);
     this.processingStarted.set(false);
     this.fileStates.set(files.map(f => ({
-      name: f.name, date: 'Just now', status: 'extracting' as const, resultIndex: null, jobId: null,
+      name: f.name, date: 'Just now', status: 'pending' as const, resultIndex: null, jobId: null,
     })));
     this.uploadedFiles.update(existing => [
       ...files.map(f => ({ name: f.name, size: f.size, uploadedAt: new Date() })),
