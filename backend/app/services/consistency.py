@@ -29,12 +29,17 @@ def _build_retry_hint(consistency: dict) -> str:
 
     issues = []
 
-    # Count mismatch (weighted 20% of final score)
-    if count_a != count_b:
+    # Question count is the top-priority signal — a miscount means whole
+    # questions are missing or wrongly merged, which no per-field fix can
+    # repair. Always call this out first and make it non-negotiable.
+    count_mismatch = count_a != count_b
+    if count_mismatch:
         issues.append(
-            f"- QUESTION COUNT MISMATCH: one model found {count_a} questions, "
-            f"the other found {count_b}. Count every numbered question separately — "
-            "do not merge multi-part questions and do not skip any."
+            f"- QUESTION COUNT MISMATCH (highest priority): one pass found {count_a} "
+            f"questions, the other found {count_b}. Before anything else, recount every "
+            "numbered question in the source text one at a time. Do not merge multi-part "
+            "questions into one, and do not skip any — every numbered item must produce "
+            "exactly one question object."
         )
 
     if per_q:
@@ -42,7 +47,6 @@ def _build_retry_hint(consistency: dict) -> str:
         avg_answer = sum(q["answer_similarity"]  for q in per_q) / len(per_q)
         avg_choices= sum(q["choices_similarity"] for q in per_q) / len(per_q)
         type_mismatches   = sum(1 for q in per_q if q["type_match"]   == 0)
-        points_mismatches = sum(1 for q in per_q if q["points_match"] == 0)
 
         if avg_answer < 0.80:
             issues.append(
@@ -66,11 +70,6 @@ def _build_retry_hint(consistency: dict) -> str:
                 f"- QUESTION TYPE MISMATCH ({type_mismatches} question(s)): Use "
                 "\"multiple_choice\" only when labelled options (A/B/C/D) are present, "
                 "otherwise use \"short_answer\"."
-            )
-        if points_mismatches > 0:
-            issues.append(
-                f"- POINTS MISMATCH ({points_mismatches} question(s)): Read the marks/points "
-                "stated next to each question carefully and use the exact number."
             )
 
     if not issues:
@@ -120,14 +119,16 @@ def _score_pair(qa: dict, qb: dict) -> dict:
     feedback_sim = _str_sim(qa.get("feedback", ""),       qb.get("feedback", ""))
     choices_sim  = _choices_sim(qa.get("choices", []),    qb.get("choices", []))
     type_match   = 1.0 if qa.get("type")   == qb.get("type")   else 0.0
-    points_match = 1.0 if qa.get("points") == qb.get("points") else 0.0
 
+    # Points is excluded from scoring/conflicts entirely: it's either
+    # overridden deterministically from the instructions block's rubric
+    # statement, or left as a single model's un-invented value — neither
+    # case is an A-vs-B disagreement worth scoring or flagging for review.
     score = (
-        text_sim     * 0.30 +
+        text_sim     * 0.35 +
         answer_sim   * 0.35 +
         choices_sim  * 0.15 +
         type_match   * 0.10 +
-        points_match * 0.05 +
         feedback_sim * 0.05
     )
 
@@ -145,15 +146,12 @@ def _score_pair(qa: dict, qb: dict) -> dict:
             conflicts[field] = {"value_a": qa.get(field), "value_b": qb.get(field)}
     if type_match == 0:
         conflicts["type"] = {"value_a": qa.get("type"), "value_b": qb.get("type")}
-    if points_match == 0:
-        conflicts["points"] = {"value_a": qa.get("points"), "value_b": qb.get("points")}
 
     return {
         "text_similarity":    round(text_sim,     4),
         "answer_similarity":  round(answer_sim,   4),
         "choices_similarity": round(choices_sim,  4),
         "type_match":         type_match,
-        "points_match":       points_match,
         "feedback_similarity":round(feedback_sim, 4),
         "score":              round(score,         4),
         "conflicts":          conflicts,
@@ -179,12 +177,19 @@ def score_consistency(normalised_a: dict, normalised_b: dict) -> dict:
     per_question = [_score_pair(qs_a[i], qs_b[i]) for i in range(n)]
     avg_q_score  = sum(q["score"] for q in per_question) / n
 
-    # 20% question count agreement + 80% content agreement
-    final_score = count_score * 0.2 + avg_q_score * 0.8
+    # 30% question count agreement + 70% content agreement
+    final_score = count_score * 0.3 + avg_q_score * 0.7
+
+    # Question count is a hard gate, not just a weighted-in signal: a high
+    # per-question score can't compensate for whole missing/extra questions,
+    # since a good average over a mismatched, index-paired subset can mask a
+    # real miscount (see _build_retry_hint). Any mismatch forces a retry
+    # instead of silently passing on a partial comparison.
+    consistent = (final_score >= CONSISTENCY_THRESHOLD) and (count_a == count_b)
 
     return {
         "score":      round(final_score, 4),
-        "consistent": final_score >= CONSISTENCY_THRESHOLD,
+        "consistent": consistent,
         "threshold":  CONSISTENCY_THRESHOLD,
         "details": {
             "count_a":            count_a,
@@ -200,7 +205,7 @@ def score_consistency(normalised_a: dict, normalised_b: dict) -> dict:
 # Public API — extraction + consistency with retry
 # ---------------------------------------------------------------------------
 
-async def check_with_retry(text: str) -> dict:
+async def check_with_retry(text: str, filename: str = "") -> dict:
     last_result      = None
     last_consistency = None
     # Track the attempt that produced the best per-question score data.
@@ -215,7 +220,7 @@ async def check_with_retry(text: str) -> dict:
         else:
             extract_text = text + _build_retry_hint(last_consistency)
 
-        result = await extract(extract_text)
+        result = await extract(extract_text, filename)
         last_result = result
 
         err_a = result["normalised_a"].get("error")
@@ -232,7 +237,7 @@ async def check_with_retry(text: str) -> dict:
 
         details = consistency["details"]
         logger.info(
-            f"[Consistency] Attempt {attempt}/{MAX_RETRIES} — "
+            f"[Consistency] [{filename}] Attempt {attempt}/{MAX_RETRIES} — "
             f"score={consistency['score']} consistent={consistency['consistent']} "
             f"(A:{details['count_a']} Qs, B:{details['count_b']} Qs, "
             f"count_score={details.get('count_score', 'n/a')}, "
@@ -242,7 +247,7 @@ async def check_with_retry(text: str) -> dict:
             logger.debug(
                 f"  Q{i+1}: score={q['score']:.4f} | "
                 f"text={q['text_similarity']:.4f} answer={q['answer_similarity']:.4f} "
-                f"type={q['type_match']} points={q['points_match']}"
+                f"type={q['type_match']}"
             )
 
         # Keep track of the best attempt that has real per-question scores
@@ -255,12 +260,12 @@ async def check_with_retry(text: str) -> dict:
                 best_result_with_data = result
 
         if consistency["consistent"]:
-            logger.info(f"[Consistency] PASSED on attempt {attempt}")
+            logger.info(f"[Consistency] [{filename}] PASSED on attempt {attempt}")
             return result
 
         if attempt < MAX_RETRIES:
             logger.info(
-                f"[Consistency] Score {consistency['score']} below threshold "
+                f"[Consistency] [{filename}] Score {consistency['score']} below threshold "
                 f"{CONSISTENCY_THRESHOLD}, retrying..."
             )
 

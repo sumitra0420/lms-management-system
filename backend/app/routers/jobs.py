@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import threading
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
@@ -8,10 +10,19 @@ from app.db import get_db, SessionLocal
 from app.models.job import ExtractedData, UploadJob
 from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
-from app.services.converter import extract_document
+from app.services.converter import extract_document, parse_points_per_question
 from app.services.storage import download_file, generate_presigned_url
+from app.schemas.question import validate_questions
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Serialises the actual dual-model extraction call across concurrently
+# uploaded files — download/convert can still happen in parallel, but only
+# one file's Model A + Model B calls hit Bedrock at a time. Suspected fix
+# for Model B (nova-2-lite) intermittently duplicating its question output
+# under concurrent load (e.g. 17 questions coming back as 34).
+_extraction_lock = threading.Lock()
 
 
 class PresignRequest(BaseModel):
@@ -155,11 +166,23 @@ def _process_job(job_id: str, s3_key: str, filename: str):
         file_bytes             = download_file(s3_key)
         text, instructions     = extract_document(file_bytes, filename)
         file_type              = classify_document_type(filename)
-        result     = asyncio.run(check_with_retry(text))
+
+        with _extraction_lock:
+            result = asyncio.run(check_with_retry(text, filename))
 
         consistency  = result.get("consistency", {})
         questions    = result["normalised_a"].get("questions", [])
-        total_points = sum(float(q.get("points", 0)) for q in questions)
+
+        # Points: the instructions block ("Each question is graded out of N
+        # mark(s)") is the authoritative source when present — apply it to
+        # every question, overriding whatever either model guessed. If no
+        # such statement exists, keep each question's own AI-extracted value
+        # (which may itself be None — never invent a number here).
+        rubric_points = parse_points_per_question(instructions)
+        if rubric_points is not None:
+            questions = [{**q, "points": rubric_points} for q in questions]
+
+        total_points = sum(q.get("points") or 0 for q in questions)
         per_question = consistency.get("details", {}).get("per_question", [])
         consistent   = consistency.get("consistent", False)
 
@@ -179,7 +202,19 @@ def _process_job(job_id: str, s3_key: str, filename: str):
                 "conflicts":         pq.get("conflicts", {}),
             })
 
-        consistent = consistency.get("consistent", False)
+        # JSON Schema Validation — reject/flag questions whose shape doesn't
+        # match the expected Question schema (bad type enum, blank text,
+        # negative points, etc.) before they're persisted or synced to Canvas.
+        annotated = validate_questions(annotated)
+        for q in annotated:
+            if not q["schema_valid"]:
+                q["flagged"] = True
+                logger.warning(
+                    f"[Schema] Job {job_id} question {q.get('id')} failed validation: "
+                    f"{'; '.join(q['schema_errors'])}"
+                )
+
+        consistent = consistency.get("consistent", False) and all(q["schema_valid"] for q in annotated)
         attempt    = result.get("attempt", 1)
 
         db.add(ExtractedData(

@@ -26,7 +26,8 @@ Extract every learner-facing question and return STRICT valid JSON only.
 ASSESSOR KEY:
   Marks the correct answer(s). A single question may have MULTIPLE "ASSESSOR KEY:" lines —
   each is one accepted answer bullet. Concatenate ALL of them into correct_answer, separated by " | ".
-  Strip the "ASSESSOR KEY:" prefix from the value.
+  Strip the "ASSESSOR KEY:" prefix from the value. You MUST include every single ASSESSOR KEY
+  bullet found for that question.
   Example: two bullets → correct_answer = "Product releases or launches | Promotional events to draw attention to the company"
 
 ANSWER GUIDANCE:
@@ -59,7 +60,9 @@ true_false:
 
 ━━━ POINTS RULES ━━━
 - Use the explicit mark/point value stated near the question (e.g. "3 marks" → points: 3).
-- If no value is stated, default to 1.
+- If no value is stated anywhere near the question, set points to null. Do NOT invent
+  or assume a default value — a global mark-per-question value, if one exists, is applied
+  separately from the assessment's instructions block, not guessed here.
 
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY this JSON structure with no explanation outside the JSON:
@@ -129,7 +132,7 @@ def _recover_partial_json(text: str) -> dict | None:
     return None
 
 
-def _normalise(raw_json: str, source: str) -> dict:
+def _normalise(raw_json: str, source: str, filename: str = "") -> dict:
     json_text = _extract_json_from_text(raw_json)
     try:
         data = json.loads(json_text)
@@ -140,7 +143,7 @@ def _normalise(raw_json: str, source: str) -> dict:
         recovered = _recover_partial_json(json_text)
         if recovered and recovered.get("questions"):
             logger.warning(
-                f"[Extractor] Partial JSON recovery for {source}: "
+                f"[Extractor] [{filename}] Partial JSON recovery for {source}: "
                 f"salvaged {len(recovered['questions'])} questions (original error: {e})"
             )
             data = recovered
@@ -155,13 +158,14 @@ def _normalise(raw_json: str, source: str) -> dict:
                 "text":    str(c.get("text") or ""),
                 "correct": bool(c.get("correct") or False),
             })
+        raw_points = q.get("points")
         normalised_questions.append({
             "id":             str(q.get("id") or ""),
             "type":           str(q.get("type") or "short_answer"),
             "text":           str(q.get("text") or ""),
             "choices":        choices,
             "correct_answer": str(q.get("correct_answer") or ""),
-            "points":         float(q.get("points") or 0),
+            "points":         float(raw_points) if raw_points is not None else None,
             "feedback":       str(q.get("feedback") or ""),
         })
 
@@ -216,7 +220,7 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str) -> str:
             modelId=model_id,
             system=[{"text": SYSTEM_PROMPT}],
             messages=[{"role": "user", "content": [{"text": text}]}],
-            inferenceConfig={"maxTokens": 4096},
+            inferenceConfig={"maxTokens": 8192},
         )
         return response["output"]["message"]["content"][0]["text"]
 
@@ -246,27 +250,27 @@ async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_i
 # Public API
 # ---------------------------------------------------------------------------
 
-async def extract(text: str) -> dict:
+async def extract(text: str, filename: str = "") -> dict:
     """
     Run Model A and Model B in parallel.
     Routes to the correct client based on model ID prefix.
     """
     model_a_id = os.getenv("MODEL_A_ID", "")
     model_b_id = os.getenv("MODEL_B_ID", "")
-    logger.info(f"[Extractor] Starting dual extraction | Model A: {model_a_id} | Model B: {model_b_id}")
+    logger.info(f"[Extractor] [{filename}] Starting dual extraction | Model A: {model_a_id} | Model B: {model_b_id}")
 
     raw_a, raw_b = await asyncio.gather(
         _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID"),
         _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID"),
     )
 
-    norm_a = _normalise(raw_a, "model_a")
-    norm_b = _normalise(raw_b, "model_b")
+    norm_a = _normalise(raw_a, "model_a", filename)
+    norm_b = _normalise(raw_b, "model_b", filename)
 
-    logger.info(f"[Extractor] Model A → {len(norm_a.get('questions', []))} questions | error: {norm_a.get('error')}")
-    logger.info(f"[Extractor] Model B → {len(norm_b.get('questions', []))} questions | error: {norm_b.get('error')}")
-    logger.debug(f"[Extractor] Raw A (first 800 chars):\n{raw_a[:800]}")
-    logger.debug(f"[Extractor] Raw B (first 800 chars):\n{raw_b[:800]}")
+    logger.info(f"[Extractor] [{filename}] Model A → {len(norm_a.get('questions', []))} questions | error: {norm_a.get('error')}")
+    logger.info(f"[Extractor] [{filename}] Model B → {len(norm_b.get('questions', []))} questions | error: {norm_b.get('error')}")
+    logger.debug(f"[Extractor] [{filename}] Raw A (first 800 chars):\n{raw_a[:800]}")
+    logger.debug(f"[Extractor] [{filename}] Raw B (first 800 chars):\n{raw_b[:800]}")
 
     return {
         "raw_a": raw_a,

@@ -13,12 +13,14 @@ export interface PipelineQuestion {
   text: string;
   choices: { text: string; correct: boolean }[];
   correct_answer: string;
-  points: number;
+  points: number | null;
   feedback: string;
   flagged?: boolean;
   flagReason?: string;
   consistency_score?: number;
   conflicts?: { [field: string]: FieldConflict };
+  schema_valid?: boolean;
+  schema_errors?: string[];
 }
 
 export interface PipelineResult {

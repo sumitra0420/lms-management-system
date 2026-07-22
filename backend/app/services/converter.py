@@ -49,6 +49,7 @@ HOW TO ADD A NEW TEMPLATE
 from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.table import Table
+import re
 import tempfile
 import os
 
@@ -465,6 +466,33 @@ def _instructions_from_doc(doc: Document, template: str) -> str:
                 sections.append(f"[{col0}]\n{content}")
 
     return "\n\n".join(sections)
+
+
+# ===========================================================================
+# Points — global per-question mark value stated in the instructions block
+# ===========================================================================
+
+_POINTS_PATTERN = re.compile(r"graded out of\s+(\d+(?:\.\d+)?)\s*marks?", re.IGNORECASE)
+
+
+def parse_points_per_question(instructions_text: str) -> float | None:
+    """
+    Extract the global per-question mark value from the Instructions block
+    (Template A only), e.g. "Each question is graded out of 1 mark." →  1.0.
+
+    This is the authoritative source for points when present — every sample
+    Template A document states this uniformly, so it should override
+    whatever value the AI extractor guessed per-question. Returns None when
+    no such statement is found; callers should fall back to the
+    per-question AI-extracted value in that case, and leave points unset
+    if that's also absent rather than inventing a number.
+    """
+    if not instructions_text:
+        return None
+    match = _POINTS_PATTERN.search(instructions_text)
+    if not match:
+        return None
+    return float(match.group(1))
 
 
 # ===========================================================================
