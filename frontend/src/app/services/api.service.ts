@@ -21,6 +21,9 @@ export interface PipelineQuestion {
   conflicts?: { [field: string]: FieldConflict };
   schema_valid?: boolean;
   schema_errors?: string[];
+  grounding_score?: number;
+  hallucination_detected?: boolean;
+  ungrounded_fields?: string[];
 }
 
 export interface PipelineResult {

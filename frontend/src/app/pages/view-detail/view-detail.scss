@@ -181,10 +181,11 @@
     padding: 3px 8px;
     border-radius: 4px;
 
-    &.flag-review   { color: #b07d1a; background: #fefce8; }
-    &.flag-low      { color: #dc2626; background: #fff1f1; }
-    &.flag-conflict { color: #b91c1c; background: #fef2f2; }
-    &.flag-schema   { color: #7c2d12; background: #fff7ed; }
+    &.flag-review        { color: #b07d1a; background: #fefce8; }
+    &.flag-low           { color: #dc2626; background: #fff1f1; }
+    &.flag-conflict      { color: #b91c1c; background: #fef2f2; }
+    &.flag-schema        { color: #7c2d12; background: #fff7ed; }
+    &.flag-hallucination { color: #6d28d9; background: #f5f3ff; }
   }
 
   .flag-actions {
@@ -448,6 +449,33 @@
     padding-left: 20px;
     font-size: 12px;
     color: #7c2d12;
+    line-height: 1.6;
+  }
+}
+
+.grounding-section {
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 12px;
+
+  .grounding-header {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #6d28d9;
+
+    svg { flex-shrink: 0; }
+  }
+
+  .grounding-error-list {
+    margin: 6px 0 0;
+    padding-left: 20px;
+    font-size: 12px;
+    color: #6d28d9;
     line-height: 1.6;
   }
 }

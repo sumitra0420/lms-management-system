@@ -12,6 +12,7 @@ from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
 from app.services.converter import extract_document, parse_points_per_question
 from app.services.storage import download_file, generate_presigned_url
+from app.services.grounding import check_question_grounding
 from app.schemas.question import validate_questions
 
 logger = logging.getLogger(__name__)
@@ -228,7 +229,26 @@ def _process_job(job_id: str, s3_key: str, filename: str):
                     f"{'; '.join(q['schema_errors'])}"
                 )
 
-        consistent = consistency.get("consistent", False) and all(q["schema_valid"] for q in annotated)
+        # Hallucination detector — verify each question's text fields are
+        # actually grounded in the source document, independently of
+        # whether Model A and Model B agreed with each other.
+        for q in annotated:
+            grounding = check_question_grounding(q, text)
+            q["grounding_score"]        = grounding["grounding_score"]
+            q["hallucination_detected"] = grounding["hallucination_detected"]
+            q["ungrounded_fields"]      = grounding["ungrounded_fields"]
+            if grounding["hallucination_detected"]:
+                q["flagged"] = True
+                logger.warning(
+                    f"[Grounding] Job {job_id} question {q.get('id')} not grounded in source "
+                    f"(score={grounding['grounding_score']}): {grounding['ungrounded_fields']}"
+                )
+
+        consistent = (
+            consistency.get("consistent", False)
+            and all(q["schema_valid"] for q in annotated)
+            and not any(q["hallucination_detected"] for q in annotated)
+        )
         attempt    = result.get("attempt", 1)
 
         db.add(ExtractedData(

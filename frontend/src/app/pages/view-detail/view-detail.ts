@@ -83,6 +83,14 @@ export class ViewDetail implements OnInit {
     return CONFLICT_FIELD_LABELS[field] ?? field;
   }
 
+  groundedFieldLabel(field: string): string {
+    const bulletMatch = field.match(/^correct_answer\[(\d+)\]$/);
+    if (bulletMatch) return `Model Answer (bullet ${+bulletMatch[1] + 1})`;
+    const choiceMatch = field.match(/^choices\[(\d+)\]\.text$/);
+    if (choiceMatch) return `Choice ${+choiceMatch[1] + 1}`;
+    return CONFLICT_FIELD_LABELS[field] ?? field;
+  }
+
   displayConflictValue(field: string, value: any): string {
     if (field === 'choices' && Array.isArray(value)) {
       return value.map((c: any) => `${c.correct ? '✓ ' : ''}${c.text}`).join('  •  ') || '(none)';

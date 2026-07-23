@@ -92,6 +92,12 @@
                     Schema Invalid
                   </span>
                 }
+                @if (q.hallucination_detected) {
+                  <span class="flag-tag flag-hallucination">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                    Not Grounded in Source
+                  </span>
+                }
               </div>
               <button class="edit-btn" (click)="startEdit(i)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -147,6 +153,20 @@
                 <ul class="schema-error-list">
                   @for (err of q.schema_errors; track err) {
                     <li>{{ err }}</li>
+                  }
+                </ul>
+              </div>
+            }
+
+            @if (q.hallucination_detected && q.ungrounded_fields?.length) {
+              <div class="grounding-section">
+                <div class="grounding-header">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" fill="none" stroke="#6d28d9" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 15s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                  <span>Grounding score {{ (q.grounding_score ?? 0) | number:'1.2-2' }} — these fields weren't found in the source document, possibly fabricated:</span>
+                </div>
+                <ul class="grounding-error-list">
+                  @for (field of q.ungrounded_fields; track field) {
+                    <li>{{ groundedFieldLabel(field) }}</li>
                   }
                 </ul>
               </div>
