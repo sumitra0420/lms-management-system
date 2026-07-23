@@ -26,9 +26,16 @@ Extract every learner-facing question and return STRICT valid JSON only.
 ASSESSOR KEY:
   Marks the correct answer(s). A single question may have MULTIPLE "ASSESSOR KEY:" lines —
   each is one accepted answer bullet. Concatenate ALL of them into correct_answer, separated by " | ".
-  Strip the "ASSESSOR KEY:" prefix from the value. You MUST include every single ASSESSOR KEY
-  bullet found for that question.
+  Strip the "ASSESSOR KEY:" prefix from the value.
   Example: two bullets → correct_answer = "Product releases or launches | Promotional events to draw attention to the company"
+
+  CRITICAL — do not truncate based on the question wording: when the question text asks the
+  LEARNER for a specific count (e.g. "What are three (3) examples of…"), that number is how many
+  the learner must give — it is NOT a cap on how many ASSESSOR KEY bullets you extract. The source
+  document's marking guide often lists MORE acceptable answers than the question asks for, so any
+  of them can count as correct. You MUST include every single ASSESSOR KEY bullet found for that
+  question, even if there are 6, 9, or more of them for a "three (3) examples" question. Never stop
+  early because you've reached the number mentioned in the question.
 
 ANSWER GUIDANCE:
   A marking instruction that describes how many answers are needed and whether the list is flexible
