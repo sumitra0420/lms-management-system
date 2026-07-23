@@ -18,7 +18,7 @@ backend/**/*.pyc
 backend/.env
 backend/tests/output/
 backend/tests/output/**
-backend/tests/input/*.docx
+backend/tests/input/
 
 # Terraform
 terraform/.terraform/
