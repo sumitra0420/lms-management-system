@@ -43,21 +43,44 @@ ANSWER GUIDANCE:
   Store this line verbatim in the feedback field.
   Do NOT include it in correct_answer. Do NOT include it in question text.
 
+OPTION:
+  Marks a selectable multiple-choice option that is NOT the correct answer (an incorrect
+  distractor). Combined with any ASSESSOR KEY lines for the same question, OPTION lines make up
+  the complete choices[] list — OPTION lines are incorrect options, ASSESSOR KEY lines are correct
+  options. Never drop OPTION lines and never fold them into correct_answer.
+
 ━━━ QUESTION TYPE RULES ━━━
+
+STRUCTURAL SIGNAL OVERRIDES WORDING — read this first:
+  If a question is followed by ANY "OPTION:" line(s) before the next question, it IS a
+  multiple_choice question — full stop, regardless of how the question is phrased. Include every
+  "OPTION:" line AND every "ASSESSOR KEY:" line for that question in choices[]. This applies even
+  when the question reads like an open recall prompt, e.g. "What are three (3) possible actions…"
+  or "What are four (4) examples of…" — that wording does NOT make it short_answer if OPTION
+  lines are present. Only classify a question as short_answer when it has NO "OPTION:" lines at
+  all for it — just ASSESSOR KEY / ANSWER GUIDANCE lines and nothing else listed alongside them.
 
 multiple_choice — SINGLE correct answer:
   Question has selectable options and exactly one is correct.
   List ALL options in choices[]. Set "correct": true on the one correct option only.
   Put the correct option text in correct_answer as well.
 
+  META-OPTION TRAP — "All of the above" / "None of the above": if the ASSESSOR KEY option's
+  text IS a meta-option like "All of the above" or "None of the above", that meta-option is
+  ITSELF the single correct choice — include it verbatim in choices[] with "correct": true, and
+  correct_answer set to its literal text ("All of the above"). Do NOT interpret its meaning by
+  marking the other listed OPTION lines "correct": true instead — they stay "correct": false, and
+  the meta-option's own text must not be dropped from choices[].
+
 multiple_choice — MULTIPLE correct answers:
-  Question asks to select N options (e.g. "Select THREE", "select all that apply")
-  or multiple options are marked with ASSESSOR KEY.
-  List ALL options in choices[]. Set "correct": true on every correct option.
-  Put all correct option texts in correct_answer joined by " | ".
+  Question asks to select N options (e.g. "Select THREE", "select all that apply"),
+  or multiple options are marked with ASSESSOR KEY, or (per the structural rule above) it has
+  OPTION lines with more than one ASSESSOR KEY line among them.
+  List ALL options (OPTION + ASSESSOR KEY lines) in choices[]. Set "correct": true on every
+  ASSESSOR KEY option. Put all correct option texts in correct_answer joined by " | ".
 
 short_answer:
-  Open-ended question followed by ASSESSOR KEY lines or ANSWER GUIDANCE.
+  Open-ended question followed ONLY by ASSESSOR KEY lines or ANSWER GUIDANCE — no OPTION lines.
   Set choices to []. Concatenate all ASSESSOR KEY lines into correct_answer.
   Put the ANSWER GUIDANCE line in feedback.
 

@@ -99,6 +99,81 @@ def _answer_label(text: str) -> str:
 
 
 # ===========================================================================
+# List-numbering detection (a, b, c… option markers)
+# ===========================================================================
+#
+# Word auto-numbers lettered MC options (a), b), c)…) via list-numbering
+# XML (numPr -> numId -> numbering.xml -> abstractNum -> lvl -> numFmt).
+# The letters themselves are NEVER present in the paragraph's run text —
+# python-docx (and therefore the AI extractor) sees only the bare option
+# text. A non-red option (an incorrect distractor) is then structurally
+# indistinguishable from a stray short-answer bullet, and the AI has to
+# guess the question type from wording alone. That guess fails whenever a
+# multi-select MC question is phrased like an open recall question (e.g.
+# "What are three (3) possible actions…") — it looks exactly like the
+# short-answer example in the extractor's own system prompt.
+#
+# Fix: read numFmt directly from the document's numbering part and tag
+# every paragraph in a lowerLetter/upperLetter list as an "OPTION" — a
+# deterministic, colour- and wording-independent signal that this line is
+# one of a fixed set of MC choices.
+
+_LETTER_NUMFMTS = frozenset({"lowerLetter", "upperLetter"})
+_W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+
+
+def _build_numfmt_cache(doc: Document) -> dict[str, str]:
+    """
+    Maps numId -> numFmt ("lowerLetter", "bullet", "decimal", …) for level 0
+    of every list definition in the document. Returns {} if the document
+    has no numbering part (e.g. no auto-numbered lists at all).
+    """
+    try:
+        numbering_part = doc.part.numbering_part
+    except Exception:
+        return {}
+    if numbering_part is None:
+        return {}
+
+    numbering_elm = numbering_part.element
+
+    abstract_fmt: dict[str, str] = {}
+    for abstract_num in numbering_elm.findall(_W_NS + "abstractNum"):
+        abstract_id = abstract_num.get(_W_NS + "abstractNumId")
+        lvl0 = abstract_num.find(_W_NS + "lvl")
+        if lvl0 is None:
+            continue
+        numfmt_el = lvl0.find(_W_NS + "numFmt")
+        if numfmt_el is None:
+            continue
+        abstract_fmt[abstract_id] = numfmt_el.get(_W_NS + "val")
+
+    numid_fmt: dict[str, str] = {}
+    for num in numbering_elm.findall(_W_NS + "num"):
+        num_id = num.get(_W_NS + "numId")
+        abstract_id_el = num.find(_W_NS + "abstractNumId")
+        if abstract_id_el is None:
+            continue
+        abstract_id = abstract_id_el.get(_W_NS + "val")
+        if abstract_id in abstract_fmt:
+            numid_fmt[num_id] = abstract_fmt[abstract_id]
+
+    return numid_fmt
+
+
+def _is_lettered_option(para: Paragraph, numfmt_cache: dict[str, str]) -> bool:
+    """True when para belongs to a lowerLetter/upperLetter auto-numbered list."""
+    p_pr = para._p.pPr
+    if p_pr is None or p_pr.numPr is None:
+        return False
+    try:
+        num_id = str(p_pr.numPr.numId.val)
+    except Exception:
+        return False
+    return numfmt_cache.get(num_id) in _LETTER_NUMFMTS
+
+
+# ===========================================================================
 # Shared textbox helper (floating DrawingML text boxes)
 # ===========================================================================
 
@@ -248,14 +323,16 @@ def _extract_template_a(doc: Document) -> list[dict]:
     Processing rules:
     • Boilerplate rows (header + footer) are skipped entirely — this
       eliminates false ASSESSOR KEY tags from the Rubric red bullets.
-    • Within question-content rows, red-text paragraphs are labelled:
-        - "ANSWER GUIDANCE" for intro lines like "Answer may address…"
-        - "ASSESSOR KEY"    for actual answer text / correct MC options
+    • Within question-content rows, paragraphs are labelled:
+        - "ANSWER GUIDANCE" for red intro lines like "Answer may address…"
+        - "ASSESSOR KEY"    for red answer text / correct MC options
+        - "OPTION"          for non-red lettered-list MC distractors
     • Floating text-box text is extracted if present.
     • Consecutive duplicate items (from merged cells) are deduplicated.
     """
     items: list[dict] = []
     last_key: tuple | None = None
+    numfmt_cache = _build_numfmt_cache(doc)
 
     def push(text: str, label: str | None) -> None:
         nonlocal last_key
@@ -270,7 +347,13 @@ def _extract_template_a(doc: Document) -> list[dict]:
 
     def process_para(para: Paragraph) -> None:
         text, is_red = _para_red_info(para)
-        push(text, _answer_label(text) if is_red else None)
+        if is_red:
+            label = _answer_label(text)
+        elif _is_lettered_option(para, numfmt_cache):
+            label = "OPTION"
+        else:
+            label = None
+        push(text, label)
         for tb_text, tb_red in _textbox_texts(para):
             push(tb_text, _answer_label(tb_text) if tb_red else None)
 
