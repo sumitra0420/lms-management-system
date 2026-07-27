@@ -11,8 +11,16 @@ accuracy against the hand-reviewed answer key.
 Run from inside backend/:
     python tests/run_integration_test.py
 
-Or point at a custom folder:
+Or point at a custom docx folder:
     python tests/run_integration_test.py /path/to/docx/folder
+
+Or run a different model pair (see .env's MODEL_A_ID/MODEL_B_ID options)
+into its OWN output folder, so it doesn't overwrite a previous run's
+results — pass a second argument naming the output subfolder:
+    python tests/run_integration_test.py tests/input/Quiz integration_llama_mistral
+
+Results land in tests/output/test_results/<subfolder>/, defaulting to
+"integration" when no subfolder name is given (unchanged behaviour).
 """
 
 import asyncio
@@ -38,7 +46,7 @@ from app.services.grounding import check_question_grounding
 from app.schemas.question import validate_questions
 
 DEFAULT_DOCX_DIR = os.path.join(os.path.dirname(__file__), "input", "Quiz")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results", "integration")
+DEFAULT_OUTPUT_SUBDIR = "integration"
 
 
 def _flag_count(annotated: list[dict]) -> int:
@@ -111,7 +119,8 @@ async def _run_one(filename: str, file_bytes: bytes) -> dict:
     }
 
 
-async def main(docx_dir: str):
+async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR):
+    OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results", output_subdir)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     docx_files = sorted(
@@ -193,4 +202,5 @@ async def main(docx_dir: str):
 
 if __name__ == "__main__":
     docx_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DOCX_DIR
-    asyncio.run(main(os.path.abspath(docx_dir)))
+    output_subdir = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_OUTPUT_SUBDIR
+    asyncio.run(main(os.path.abspath(docx_dir), output_subdir))

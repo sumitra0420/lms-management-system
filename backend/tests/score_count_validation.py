@@ -24,15 +24,24 @@ Use score_information_retrieval.py for that deeper, matched analysis.
 Run from inside backend/ (after generate_ground_truth.py AND
 run_integration_test.py have both been run):
     python tests/score_count_validation.py
+
+Or score a specific run — e.g. after testing a different model pair with
+run_integration_test.py's output-subfolder argument — by passing the same
+subfolder path (relative to tests/output/test_results/):
+    python tests/score_count_validation.py integration/result_llama_mistral_270726_1430
+
+Results are written to tests/output/test_results/count_validation/<run>/,
+mirroring the run name, so scores from different model pairs never overwrite
+each other.
 """
 
 import json
 import os
 import sys
 
-GT_DIR     = os.path.join(os.path.dirname(__file__), "output", "test_results", "groundtruth")
-PRED_DIR   = os.path.join(os.path.dirname(__file__), "output", "test_results", "integration")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results", "count_validation")
+BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")
+GT_DIR   = os.path.join(BASE_DIR, "groundtruth")
+DEFAULT_RUN = "integration/result_claude_nova_260726_0811"
 
 
 def _pred_totals(pred_record: dict) -> dict:
@@ -79,17 +88,20 @@ def _compare_file(gt_record: dict, pred_record: dict) -> dict:
     return comparisons
 
 
-def main():
+def main(run: str = DEFAULT_RUN):
+    pred_dir   = os.path.join(BASE_DIR, run)
+    output_dir = os.path.join(BASE_DIR, "count_validation", run)
+
     if not os.path.isdir(GT_DIR):
         print(f"Ground truth folder not found: {GT_DIR}")
         print("Run tests/generate_ground_truth.py first.")
         sys.exit(1)
-    if not os.path.isdir(PRED_DIR):
-        print(f"Integration test folder not found: {PRED_DIR}")
+    if not os.path.isdir(pred_dir):
+        print(f"Integration test folder not found: {pred_dir}")
         print("Run tests/run_integration_test.py first.")
         sys.exit(1)
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     gt_files = sorted(
         f for f in os.listdir(GT_DIR)
@@ -112,7 +124,7 @@ def main():
 
     for fname in gt_files:
         gt_path   = os.path.join(GT_DIR, fname)
-        pred_path = os.path.join(PRED_DIR, fname)
+        pred_path = os.path.join(pred_dir, fname)
 
         if not os.path.exists(pred_path):
             print(f"  PENDING {fname} — no integration result yet")
@@ -126,7 +138,7 @@ def main():
 
         comparisons = _compare_file(gt_record, pred_record)
 
-        out_path = os.path.join(OUTPUT_DIR, fname)
+        out_path = os.path.join(output_dir, fname)
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump({"filename": fname, "comparisons": comparisons}, f, indent=2, ensure_ascii=False)
 
@@ -159,7 +171,7 @@ def main():
     if skipped:
         print(f"\n{skipped} file(s) pending — run run_integration_test.py to fill these in.")
 
-    summary_path = os.path.join(OUTPUT_DIR, "_summary.json")
+    summary_path = os.path.join(output_dir, "_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump({
             "per_file": summary,
@@ -169,8 +181,9 @@ def main():
             },
         }, f, indent=2, ensure_ascii=False)
 
-    print(f"\nOutput: {OUTPUT_DIR}")
+    print(f"\nOutput: {output_dir}")
 
 
 if __name__ == "__main__":
-    main()
+    run = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_RUN
+    main(run)
