@@ -5,11 +5,19 @@ import os
 
 import boto3
 import httpx
+from botocore.config import Config
 from dotenv import load_dotenv
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# botocore's default read_timeout (60s) is too short for slower models
+# generating up to maxTokens=8192 against a long document — Claude/Nova
+# happened to always finish inside that window, which is why this never
+# surfaced until testing a slower model (Mistral Large hit a hard Read
+# timeout mid-response on a ~20K-character document).
+_BEDROCK_CLIENT_CONFIG = Config(read_timeout=300, connect_timeout=10)
 
 SYSTEM_PROMPT = """You are an expert assessment-question parser for vocational education documents.
 
@@ -245,7 +253,7 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str) -> str:
     # Converse API works for ALL Bedrock models (Claude, OpenAI, etc.)
     # boto3 reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from environment
     def _invoke():
-        client = boto3.client("bedrock-runtime", region_name=region)
+        client = boto3.client("bedrock-runtime", region_name=region, config=_BEDROCK_CLIENT_CONFIG)
         response = client.converse(
             modelId=model_id,
             system=[{"text": SYSTEM_PROMPT}],
@@ -262,11 +270,16 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str) -> str:
 # Dispatcher — picks the right client based on model ID prefix
 # ---------------------------------------------------------------------------
 
-async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str) -> str:
+async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str, region_env: str) -> str:
     api_key  = os.getenv(api_key_env, "")
     base_url = os.getenv(base_url_env, "")
     model_id = os.getenv(model_id_env, "")
-    region   = os.getenv("AWS_REGION", "ap-southeast-2")
+    # Per-model region override — some Bedrock cross-region inference
+    # profiles (e.g. Llama's "us." profiles) only resolve when the client
+    # is pointed at a region within that profile's group, not the account's
+    # default region. Falls back to the shared AWS_REGION when no override
+    # is set, so existing single-region setups are unaffected.
+    region   = os.getenv(region_env) or os.getenv("AWS_REGION", "ap-southeast-2")
 
     if base_url:
         # bedrock-mantle Quickstart bearer token via httpx
@@ -290,8 +303,8 @@ async def extract(text: str, filename: str = "") -> dict:
     logger.info(f"[Extractor] [{filename}] Starting dual extraction | Model A: {model_a_id} | Model B: {model_b_id}")
 
     raw_a, raw_b = await asyncio.gather(
-        _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID"),
-        _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID"),
+        _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION"),
+        _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION"),
     )
 
     norm_a = _normalise(raw_a, "model_a", filename)

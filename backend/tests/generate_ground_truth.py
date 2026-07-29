@@ -60,7 +60,7 @@ async def _run_one(filename: str, file_bytes: bytes) -> dict:
     text, instructions = extract_document(file_bytes, filename)
     file_type = classify_document_type(filename)
 
-    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID")
+    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION")
     norm_a = _normalise(raw_a, "model_a", filename)
     questions = norm_a.get("questions", [])
 
