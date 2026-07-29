@@ -212,7 +212,7 @@ def _process_job(job_id: str, s3_key: str, filename: str):
             q_score = pq.get("score", missing_score_default)
             annotated.append({
                 **q,
-                "flagged":           q_score < 0.75,
+                "flagged":           q_score < 0.90,
                 "consistency_score": q_score,
                 "conflicts":         pq.get("conflicts", {}),
             })
