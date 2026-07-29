@@ -21,9 +21,25 @@ results — pass a second argument naming the output subfolder:
 
 Results land in tests/output/test_results/<subfolder>/, defaulting to
 "integration" when no subfolder name is given (unchanged behaviour).
+
+To A/B test a prompt change without editing extractor.py or touching git,
+pass a third argument naming the prompt variant ("old" or "new", see
+tests/prompt_variants.py — currently isolates the ASSESSOR KEY
+"CRITICAL — do not truncate..." paragraph added in commit b982274):
+    python tests/run_integration_test.py tests/input/Quiz integration/result_oldprompt old
+    python tests/run_integration_test.py tests/input/Quiz integration/result_newprompt new
+
+That third argument is only a human-readable label (saved as prompt_label)
+— it is NOT what makes two runs comparable. Every record also saves
+prompt_fingerprint, a short hash of the exact SYSTEM_PROMPT text that was
+actually sent to the model. Two runs used the identical prompt iff their
+fingerprints match, regardless of what label (or none) was passed — so
+this keeps working as you keep editing the prompt in the future without
+having to invent a new label name every time.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -39,23 +55,38 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # attempts) would be silently dropped — only WARNING+ would show.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 
+from app.services import extractor as extractor_module
 from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
 from app.services.converter import extract_document, parse_points_per_question
 from app.services.grounding import check_question_grounding
 from app.schemas.question import validate_questions
+from tests.prompt_variants import get_prompt
 
 DEFAULT_DOCX_DIR = os.path.join(os.path.dirname(__file__), "input", "Quiz")
 DEFAULT_OUTPUT_SUBDIR = "integration"
+DEFAULT_PROMPT_VARIANT = "new"
 
 
-def _flag_count(annotated: list[dict]) -> int:
-    """Mirrors app/routers/jobs.py::_flag_count — the single canonical
-    definition of "needs human review", kept in sync with production."""
-    return sum(1 for q in annotated if (q.get("consistency_score") or 1.0) < 0.90)
+def _flag_breakdown(annotated: list[dict]) -> dict:
+    """
+    Counts questions flagged=True (the canonical per-question definition,
+    matching app/routers/jobs.py) plus a breakdown of which of the three
+    independent signals caused it — flag_count alone can't tell you whether
+    a file's flags are mostly A/B disagreement, schema errors, or
+    hallucinations, and those call for very different fixes. The three
+    reason counts can overlap (one question can trip more than one), so
+    they won't necessarily sum to total.
+    """
+    return {
+        "total":            sum(1 for q in annotated if q.get("flagged")),
+        "low_consistency":  sum(1 for q in annotated if (q.get("consistency_score") or 1.0) < 0.90),
+        "schema_invalid":   sum(1 for q in annotated if not q.get("schema_valid", True)),
+        "hallucination":    sum(1 for q in annotated if q.get("hallucination_detected")),
+    }
 
 
-async def _run_one(filename: str, file_bytes: bytes) -> dict:
+async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_fingerprint: str) -> dict:
     text, instructions = extract_document(file_bytes, filename)
     file_type = classify_document_type(filename)
 
@@ -79,7 +110,7 @@ async def _run_one(filename: str, file_bytes: bytes) -> dict:
         q_score = pq.get("score", missing_score_default)
         annotated.append({
             **q,
-            "flagged": q_score < 0.75,
+            "flagged": q_score < 0.90,
             "consistency_score": q_score,
             "conflicts": pq.get("conflicts", {}),
         })
@@ -103,15 +134,31 @@ async def _run_one(filename: str, file_bytes: bytes) -> dict:
         and not any(q["hallucination_detected"] for q in annotated)
     )
 
+    flags = _flag_breakdown(annotated)
+    details = consistency.get("details", {})
+
     return {
         "filename": filename,
         "file_type": file_type,
+        "prompt_label": prompt_label,
+        "prompt_fingerprint": prompt_fingerprint,
+        "model_a_id": os.getenv("MODEL_A_ID", ""),
+        "model_b_id": os.getenv("MODEL_B_ID", ""),
         "consistent": consistent,
         "consistency_score": consistency.get("score", 0),
+        # The two components blended into consistency_score above (count_score
+        # * 0.3 + avg_question_score * 0.7) — surfaced separately because a low
+        # count_score (models disagreed on HOW MANY questions exist) needs a
+        # different fix than a low avg_question_score (models found the same
+        # questions but disagreed on content).
+        "count_score": details.get("count_score"),
+        "avg_question_score": details.get("avg_question_score"),
         "total_questions": len(annotated),
         "total_points": total_points,
         "attempt": result.get("attempt", 1),
-        "flag_count": _flag_count(annotated),
+        "flag_count": flags["total"],
+        "flag_reasons": {k: v for k, v in flags.items() if k != "total"},
+        "model_a_question_count": len(result["normalised_a"].get("questions", [])),
         "model_b_question_count": len(result["normalised_b"].get("questions", [])),
         "model_a_error": result["normalised_a"].get("error"),
         "model_b_error": result["normalised_b"].get("error"),
@@ -119,7 +166,14 @@ async def _run_one(filename: str, file_bytes: bytes) -> dict:
     }
 
 
-async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR):
+async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR, prompt_variant: str = DEFAULT_PROMPT_VARIANT):
+    extractor_module.SYSTEM_PROMPT = get_prompt(prompt_variant)
+    prompt_fingerprint = hashlib.sha256(extractor_module.SYSTEM_PROMPT.encode()).hexdigest()[:10]
+    print(f"Prompt label       : {prompt_variant}")
+    print(f"Prompt fingerprint : {prompt_fingerprint}")
+    print(f"Model A            : {os.getenv('MODEL_A_ID', '')}")
+    print(f"Model B            : {os.getenv('MODEL_B_ID', '')}")
+
     OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results", output_subdir)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -151,7 +205,7 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR):
             with open(docx_path, "rb") as f:
                 file_bytes = f.read()
 
-            record = await _run_one(filename, file_bytes)
+            record = await _run_one(filename, file_bytes, prompt_variant, prompt_fingerprint)
             elapsed = time.time() - t0
 
             with open(out_path, "w", encoding="utf-8") as f:
@@ -167,12 +221,19 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR):
             summary.append({
                 "filename": filename,
                 "status": status,
+                "prompt_label": record["prompt_label"],
+                "prompt_fingerprint": record["prompt_fingerprint"],
                 "consistent": record["consistent"],
                 "consistency_score": record["consistency_score"],
+                "count_score": record["count_score"],
+                "avg_question_score": record["avg_question_score"],
                 "total_questions": record["total_questions"],
                 "total_points": record["total_points"],
                 "flag_count": record["flag_count"],
+                "flag_reasons": record["flag_reasons"],
                 "attempt": record["attempt"],
+                "model_a_question_count": record["model_a_question_count"],
+                "model_b_question_count": record["model_b_question_count"],
                 "model_a_error": record["model_a_error"],
                 "model_b_error": record["model_b_error"],
                 "elapsed_sec": round(elapsed, 1),
@@ -203,4 +264,5 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR):
 if __name__ == "__main__":
     docx_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DOCX_DIR
     output_subdir = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_OUTPUT_SUBDIR
-    asyncio.run(main(os.path.abspath(docx_dir), output_subdir))
+    prompt_variant = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_PROMPT_VARIANT
+    asyncio.run(main(os.path.abspath(docx_dir), output_subdir, prompt_variant))
