@@ -19,6 +19,11 @@ backend/.env
 backend/tests/output/
 backend/tests/output/**
 backend/tests/input/
+backend/tests/notebooks/
+backend/**/.ipynb_checkpoints/
+
+# JetBrains IDE
+backend/.idea/
 
 # Terraform
 terraform/.terraform/
