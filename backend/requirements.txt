@@ -11,3 +11,8 @@ openai==1.51.0
 anthropic[bedrock]>=0.40.0
 sqlalchemy==2.0.36
 psycopg2-binary==2.9.9
+matplotlib==3.9.2
+jupyter
+pandas
+seaborn
+pytz
