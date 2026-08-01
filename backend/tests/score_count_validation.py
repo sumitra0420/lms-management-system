@@ -35,6 +35,7 @@ mirroring the run name, so scores from different model pairs never overwrite
 each other.
 """
 
+import csv
 import json
 import os
 import sys
@@ -181,7 +182,26 @@ def main(run: str = DEFAULT_RUN):
             },
         }, f, indent=2, ensure_ascii=False)
 
+    # Flat CSV — one row per (file, field) comparison, for pasting straight
+    # into a report/spreadsheet instead of parsing the nested JSON above.
+    csv_path = os.path.join(output_dir, "_summary.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["filename", "field", "ground_truth", "predicted", "match", "diff"])
+        for row in summary:
+            for field, c in row["comparisons"].items():
+                writer.writerow([row["filename"], field, c["ground_truth"], c["predicted"], c["match"], c["diff"]])
+        writer.writerow([])
+        writer.writerow(["field", "matched", "total", "agreement_pct"])
+        for field in fields:
+            total = field_total_counts[field]
+            if total == 0:
+                continue
+            matched = field_match_counts[field]
+            writer.writerow([field, matched, total, round(matched / total * 100, 1)])
+
     print(f"\nOutput: {output_dir}")
+    print(f"CSV:    {csv_path}")
 
 
 if __name__ == "__main__":
