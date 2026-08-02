@@ -108,34 +108,35 @@ def _plot(metric: str, runs: list, all_data: list):
             label=run, color=RUN_COLORS[i % len(RUN_COLORS)],
         )
 
-    # Selective direct labels: when every run has the same value for a
-    # field, repeating "100.0%" once per bar just collides — label that
-    # group once, centered, instead. Only label per-bar where runs
-    # actually differ, so the label draws attention to real variation.
+    # Selective direct labels: runs sharing (near-)identical values on a
+    # field would each get their own overlapping "100.0%" — instead,
+    # cluster same-valued bars within a field and place ONE label at the
+    # cluster's center. A field where every run differs just labels each
+    # bar individually, same as a cluster of size 1.
     for f_idx in range(len(fields)):
-        col = [vals[f_idx] for vals in all_vals if vals[f_idx] == vals[f_idx]]  # drop nan
-        if not col:
-            continue
-        uniform = (max(col) - min(col)) < 0.05
-        if uniform:
+        present = [i for i in range(n) if all_vals[i][f_idx] == all_vals[i][f_idx]]  # drop nan
+        clusters: list[list[int]] = []
+        for i in present:
+            val = all_vals[i][f_idx]
+            placed = False
+            for cluster in clusters:
+                if abs(all_vals[cluster[0]][f_idx] - val) < 0.05:
+                    cluster.append(i)
+                    placed = True
+                    break
+            if not placed:
+                clusters.append([i])
+
+        for cluster in clusters:
+            val = all_vals[cluster[0]][f_idx]
+            offsets = [(i - (n - 1) / 2) * bar_width for i in cluster]
+            center_offset = sum(offsets) / len(offsets)
             ax.annotate(
-                f"{col[0]:.1f}%",
-                xy=(x[f_idx], max(col)),
+                f"{val:.1f}%",
+                xy=(x[f_idx] + center_offset, val),
                 xytext=(0, 3), textcoords="offset points",
-                ha="center", va="bottom", fontsize=8, color="#0b0b0b",
+                ha="center", va="bottom", fontsize=7.5, color="#0b0b0b",
             )
-        else:
-            for i in range(n):
-                val = all_vals[i][f_idx]
-                if val != val:
-                    continue
-                offset = (i - (n - 1) / 2) * bar_width
-                ax.annotate(
-                    f"{val:.1f}%",
-                    xy=(x[f_idx] + offset, val),
-                    xytext=(0, 3), textcoords="offset points",
-                    ha="center", va="bottom", fontsize=8, color="#0b0b0b",
-                )
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, color="#0b0b0b")
