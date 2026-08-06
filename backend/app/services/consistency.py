@@ -87,16 +87,31 @@ def _build_retry_hint(consistency: dict) -> str:
 # Field-level similarity helpers
 # ---------------------------------------------------------------------------
 
+# Curly/smart quotes normalized to their straight equivalents before any
+# text comparison — one model outputting ' ' " " and the other ' ' " "
+# for the exact same content is a typography choice, not a disagreement.
+_QUOTE_MAP = str.maketrans({
+    "‘": "'", "’": "'",  # ' '
+    "“": '"', "”": '"',  # " "
+})
+
+
+def normalize_quotes(s: str) -> str:
+    return (s or "").translate(_QUOTE_MAP)
+
+
 def _str_sim(a: str, b: str) -> float:
     if not a and not b:
         return 1.0
     if not a or not b:
         return 0.0
+    a = normalize_quotes(a).lower().strip()
+    b = normalize_quotes(b).lower().strip()
     # autojunk=False — SequenceMatcher's default autojunk heuristic can crater
     # the ratio on longer strings (>200 chars) that are otherwise near-identical
     # (e.g. the same answer reformatted with different separators/punctuation),
     # since it deprioritizes any character appearing in >1% of the string.
-    return SequenceMatcher(None, a.lower().strip(), b.lower().strip(), autojunk=False).ratio()
+    return SequenceMatcher(None, a, b, autojunk=False).ratio()
 
 
 def _choices_sim(ca: list, cb: list) -> float:

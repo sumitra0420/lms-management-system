@@ -16,17 +16,23 @@ after trimming surrounding whitespace) against ground truth — no fuzzy
 tolerance, intentionally stricter than auto_verdict.py's similarity-threshold
 comparison, per your call to use exact matching here.
 
-One deliberate exception: correct_answer treats "|" and ";" as the same
-separator when splitting into a set of items — "a; b; c" and "a | b | c"
-count as the same answer, since that's a pure punctuation difference, not
-a content error. Nothing else is normalized: a leading phrase like "Any
-three of:" is real content (it tells the learner how many answers are
-required) and is NOT stripped — if one side has it and the other doesn't,
-that's still a genuine mismatch. Commas are also left alone as a
-separator, since real answers use commas inside a single item (e.g.
-"clean, full flavour with no sour notes") — splitting on them would
-create a false mismatch in the other direction. question_text/marks/choices
-stay fully exact, no normalization at all.
+Two deliberate exceptions, applied to every field:
+
+- Curly/smart quotes (‘ ’ “ ”) are normalized to straight quotes (' ") before
+  comparing — one model outputting curly quotes and the other straight for
+  the same word is a typography choice, not a disagreement (see
+  consistency.py's normalize_quotes, shared with the production A/B check).
+- correct_answer treats "|" and ";" as the same separator when splitting
+  into a set of items — "a; b; c" and "a | b | c" count as the same answer,
+  since that's a pure punctuation difference, not a content error.
+
+Nothing else is normalized: a leading phrase like "Any three of:" is real
+content (it tells the learner how many answers are required) and is NOT
+stripped — if one side has it and the other doesn't, that's still a
+genuine mismatch. Commas are also left alone as a separator, since real
+answers use commas inside a single item (e.g. "clean, full flavour with no
+sour notes") — splitting on them would create a false mismatch in the
+other direction.
 
 Denominator for each field is the number of GROUND TRUTH questions the
 field applies to (not predicted questions) — a dropped question counts as
@@ -58,6 +64,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from tests.score_question_detection import _greedy_match, MATCH_THRESHOLD
+from app.services.consistency import normalize_quotes
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")
 GT_DIR   = os.path.join(BASE_DIR, "groundtruth")
@@ -74,7 +81,7 @@ _ANSWER_SEPARATOR_RE = re.compile(r"\s*[|;]\s*")
 
 
 def _norm_text(s) -> str:
-    return " ".join(str(s or "").split())
+    return " ".join(normalize_quotes(str(s or "")).split())
 
 
 def _gt_answer(gt: dict) -> str:
