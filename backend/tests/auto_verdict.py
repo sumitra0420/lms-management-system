@@ -51,7 +51,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.services.consistency import _str_sim, _choices_sim, FIELD_CONFLICT_THRESHOLDS
 from tests.score_question_detection import _greedy_match, MATCH_THRESHOLD
-from tests.export_flag_review import _flag_reasons
+from tests.export_flag_review import _flag_reasons, _format_conflicts
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")
 GT_DIR   = os.path.join(BASE_DIR, "groundtruth")
@@ -115,6 +115,7 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
         else:
             verdict = "FN"
 
+        model_a_value, model_b_value = _format_conflicts(pred)
         rows.append({
             "filename":          pred_record.get("filename", ""),
             "question_id":       pred.get("id"),
@@ -128,6 +129,9 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
             "flag_reasons":      _flag_reasons(pred),
             "consistency_score": pred.get("consistency_score"),
             "grounding_score":   pred.get("grounding_score"),
+            "conflict_fields":   ", ".join((pred.get("conflicts") or {}).keys()),
+            "model_a_value":     model_a_value,
+            "model_b_value":     model_b_value,
             "content_issues":    "+".join(issues),
             "auto_verdict":      verdict,
             "human_override":    "",
@@ -148,6 +152,9 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
             "flag_reasons":      "",
             "consistency_score": "",
             "grounding_score":   "",
+            "conflict_fields":   "",
+            "model_a_value":     "",
+            "model_b_value":     "",
             "content_issues":    "missing_from_extraction",
             "auto_verdict":      "FN",  # a real problem (dropped question) that nothing ever flagged
             "human_override":    "",
@@ -156,6 +163,7 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
     for pred_j in unmatched_pred:
         pred = pred_questions[pred_j]
         flagged = bool(pred.get("flagged"))
+        model_a_value, model_b_value = _format_conflicts(pred)
         rows.append({
             "filename":          pred_record.get("filename", ""),
             "question_id":       pred.get("id"),
@@ -169,6 +177,9 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
             "flag_reasons":      _flag_reasons(pred),
             "consistency_score": pred.get("consistency_score"),
             "grounding_score":   pred.get("grounding_score"),
+            "conflict_fields":   ", ".join((pred.get("conflicts") or {}).keys()),
+            "model_a_value":     model_a_value,
+            "model_b_value":     model_b_value,
             "content_issues":    "no_ground_truth_match(hallucinated)",
             "auto_verdict":      "TP" if flagged else "FN",
             "human_override":    "",

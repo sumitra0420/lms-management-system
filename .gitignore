@@ -22,6 +22,8 @@ backend/tests/input/
 backend/tests/notebooks/
 backend/**/.ipynb_checkpoints/
 
+backend/tests/paras_v3/raw_output/
+
 # JetBrains IDE
 backend/.idea/
 
@@ -33,3 +35,4 @@ terraform/.terraform.lock.hcl
 terraform/terraform.tfvars
 
 CLAUDE.md
+
