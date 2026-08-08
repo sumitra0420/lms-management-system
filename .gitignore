@@ -23,6 +23,7 @@ backend/tests/notebooks/
 backend/**/.ipynb_checkpoints/
 
 backend/tests/paras_v3/raw_output/
+backend/tests/paras_v3/
 
 # JetBrains IDE
 backend/.idea/
