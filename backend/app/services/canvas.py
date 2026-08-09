@@ -33,11 +33,18 @@ def create_quiz(course_id: int, title: str) -> dict:
     return response.json()
 
 
-def add_mcq_question(course_id: int, quiz_id: int, question_text: str, options: list[str], correct_index: int, points: float = 1) -> dict:
+def add_mcq_question(course_id: int, quiz_id: int, question_text: str, options: list[str], correct_indices: list[int], points: float = 1) -> dict:
     """
     Adds one multiple-choice question to an existing quiz. options[i] with
-    i == correct_index gets full marks (answer_weight=100), every other
-    option gets 0 — that's how Canvas represents "which option is right."
+    i in correct_indices gets full marks (answer_weight=100), every other
+    option gets 0 — that's how Canvas represents "which option(s) are right."
+
+    question_type switches automatically on how many correct answers there
+    are: "multiple_choice_question" (radio buttons, exactly one correct)
+    for a single correct index, "multiple_answers_question" (checkboxes,
+    student must select ALL correct options for credit) when there's more
+    than one — that's the actual "command" that tells Canvas a question
+    accepts multiple answers, not something set on individual options.
 
     Canvas's answers list is a Rails-style nested array, normally written
     as repeated "question[answers][][answer_text]" keys — but a plain dict
@@ -47,16 +54,17 @@ def add_mcq_question(course_id: int, quiz_id: int, question_text: str, options: 
     key unique, so a plain dict works and Canvas still parses it as the
     same nested array.
     """
+    question_type = "multiple_answers_question" if len(correct_indices) > 1 else "multiple_choice_question"
     url = f"{_base_url()}/api/v1/courses/{course_id}/quizzes/{quiz_id}/questions"
     body = {
         "question[question_name]": question_text[:100],
         "question[question_text]": question_text,
-        "question[question_type]": "multiple_choice_question",
+        "question[question_type]": question_type,
         "question[points_possible]": str(points),
     }
     for i, opt in enumerate(options):
         body[f"question[answers][{i}][answer_text]"] = opt
-        body[f"question[answers][{i}][answer_weight]"] = "100" if i == correct_index else "0"
+        body[f"question[answers][{i}][answer_weight]"] = "100" if i in correct_indices else "0"
 
     response = httpx.post(url, headers=_headers(), data=body, timeout=30)
     response.raise_for_status()
@@ -90,10 +98,10 @@ def sync_question(course_id: int, quiz_id: int, question: dict) -> dict:
     choices/correct_answer/points/feedback — see app/schemas/question.py)
     to the raw Canvas calls above. Dispatches on `type`.
 
-    Only multiple_choice (single correct answer) and short_answer are
-    handled so far — true_false and multi-select MCQ (more than one
-    choice marked correct) aren't wired up yet, that's the next step
-    after this one's confirmed working against real extracted data.
+    multiple_choice (single or multi-select — see add_mcq_question) and
+    short_answer are handled. true_false has zero real occurrences across
+    your whole dataset (checked before building this), so it's not wired
+    up — not worth the code until it actually shows up in a document.
     """
     q_type = question.get("type")
     points = question.get("points") or 1
@@ -101,8 +109,8 @@ def sync_question(course_id: int, quiz_id: int, question: dict) -> dict:
     if q_type == "multiple_choice":
         choices = question.get("choices") or []
         options = [c.get("text", "") for c in choices]
-        correct_index = next((i for i, c in enumerate(choices) if c.get("correct")), 0)
-        return add_mcq_question(course_id, quiz_id, question["text"], options, correct_index, points)
+        correct_indices = [i for i, c in enumerate(choices) if c.get("correct")]
+        return add_mcq_question(course_id, quiz_id, question["text"], options, correct_indices, points)
 
     if q_type == "short_answer":
         return add_essay_question(course_id, quiz_id, question["text"], question.get("correct_answer", ""), points)
@@ -111,25 +119,38 @@ def sync_question(course_id: int, quiz_id: int, question: dict) -> dict:
 
 
 if __name__ == "__main__":
-    # Quick manual smoke test — run from inside backend/:
+    # Smoke test against REAL extracted data (not hardcoded examples), to
+    # prove sync_question() actually bridges your pipeline's real output —
+    # temporary, pulls straight from a tests/ result file; will go away
+    # once this is wired up behind a real API endpoint.
+    #
+    # This run syncs EVERY question from one full file (22 MCQ questions),
+    # not just one — the earlier step proved single-question mapping,
+    # this proves the whole-quiz pattern before wiring a real endpoint.
     #     python app/services/canvas.py
-    quiz = create_quiz(course_id=3412, title="LMS Sync Test Quiz (test 1)")
+    import json
+
+    result_dir = "tests/output/test_results/integration/result_oldprompt_v2"
+    mcq_file = f"{result_dir}/SIRXCEG008 Knowledge Test 2 - Assessor Guide_MC.json"
+
+    with open(mcq_file, encoding="utf-8") as f:
+        record = json.load(f)
+        mcq_questions = record["questions"]
+
+    quiz = create_quiz(course_id=3412, title=f"LMS Sync Test — {record['filename']}")
     print("Created quiz id:", quiz["id"])
     print("URL:", quiz["html_url"])
+    print(f"Syncing {len(mcq_questions)} questions...")
 
-    question = add_mcq_question(
-        course_id=3412,
-        quiz_id=quiz["id"],
-        question_text="What is 2 + 2?",
-        options=["3", "4", "5"],
-        correct_index=1,
-    )
-    print("Added question id:", question["id"])
+    failures = []
+    for q in mcq_questions:
+        try:
+            created = sync_question(course_id=3412, quiz_id=quiz["id"], question=q)
+            print(f"  {q['id']} -> Canvas question id {created['id']}")
+        except Exception as e:
+            print(f"  {q['id']} -> FAILED: {e}")
+            failures.append(q["id"])
 
-    essay_question = add_essay_question(
-        course_id=3412,
-        quiz_id=quiz["id"],
-        question_text="Explain the Maillard reaction and why it matters in cooking.",
-        expected_answer="A chemical browning reaction between amino acids and reducing sugars under dry heat, producing flavour/aroma compounds and a browned crust.",
-    )
-    print("Added essay question id:", essay_question["id"])
+    print(f"\nDone: {len(mcq_questions) - len(failures)}/{len(mcq_questions)} synced")
+    if failures:
+        print("Failed:", failures)
