@@ -2,12 +2,14 @@ import asyncio
 import logging
 import threading
 import uuid
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db import get_db, SessionLocal
 from app.models.job import ExtractedData, UploadJob
+from app.services.canvas import create_quiz, sync_question
 from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
 from app.services.converter import extract_document, parse_points_per_question
@@ -31,6 +33,11 @@ class PresignRequest(BaseModel):
 
 class EditRequest(BaseModel):
     questions: list
+
+class SyncRequest(BaseModel):
+    # Hardcoded default matches the Canvas test course (TEST101) used to
+    # build and verify canvas.py — becomes a real UI choice later.
+    course_id: int = 3412
 
 
 @router.post("/jobs/presign")
@@ -74,6 +81,51 @@ def save_edits(job_id: str, body: EditRequest, db: Session = Depends(get_db)):
     job.extracted_data.edited_json = body.questions
     db.commit()
     return {"status": "saved", "job_id": job_id}
+
+
+@router.post("/jobs/{job_id}/sync")
+def sync_to_canvas(job_id: str, req: SyncRequest = SyncRequest(), db: Session = Depends(get_db)):
+    """
+    Creates one Canvas quiz for this job and syncs every question into it
+    (edited_json if the user made edits, else the original json_output).
+    Runs synchronously — unlike extraction, this isn't expected to be slow
+    enough to need a background task/polling, and keeping it synchronous
+    means the caller gets the real result (Canvas quiz id + any
+    per-question failures) directly in the response, no extra round trip.
+    """
+    job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if not job.extracted_data:
+        raise HTTPException(status_code=404, detail="No extracted data for this job")
+
+    questions = job.extracted_data.edited_json or job.extracted_data.json_output or []
+    if not questions:
+        raise HTTPException(status_code=400, detail="No questions to sync")
+
+    quiz = create_quiz(course_id=req.course_id, title=job.filename)
+
+    failures = []
+    for q in questions:
+        try:
+            sync_question(course_id=req.course_id, quiz_id=quiz["id"], question=q)
+        except Exception as exc:
+            logger.warning(f"[Canvas] Job {job_id} question {q.get('id')} failed to sync: {exc}")
+            failures.append({"question_id": q.get("id"), "error": str(exc)})
+
+    job.canvas_quiz_id = quiz["id"]
+    job.canvas_course_id = req.course_id
+    job.synced_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {
+        "job_id":           job_id,
+        "canvas_quiz_id":   quiz["id"],
+        "canvas_url":       quiz["html_url"],
+        "total_questions":  len(questions),
+        "synced_questions": len(questions) - len(failures),
+        "failures":         failures,
+    }
 
 
 def _flag_count(job: UploadJob) -> int:
