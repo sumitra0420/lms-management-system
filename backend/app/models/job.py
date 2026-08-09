@@ -24,6 +24,9 @@ class UploadJob(Base):
     retry_count      = Column(Integer, default=0)
     consistency_score = Column(Float, nullable=True)
     total_points     = Column(Float, nullable=True)
+    canvas_quiz_id   = Column(Integer, nullable=True)  # set once synced; presence == "has been synced"
+    canvas_course_id = Column(Integer, nullable=True)  # which course it was synced into
+    synced_at        = Column(DateTime(timezone=True), nullable=True)
     created_at       = Column(DateTime(timezone=True), default=_now)
     updated_at       = Column(DateTime(timezone=True), default=_now, onupdate=_now)
 
