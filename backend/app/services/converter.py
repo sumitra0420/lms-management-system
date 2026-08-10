@@ -229,6 +229,28 @@ def _iter_blocks(doc: Document):
             yield Table(child, doc)
 
 
+def _unique_row_cells(row):
+    """
+    Yield each cell in a table row once, skipping repeats caused by
+    horizontally-merged cells.
+
+    python-docx's row.cells returns the SAME underlying cell object once for
+    every grid column a merged cell spans (a documented quirk, not a bug on
+    our end) — a cell merged across 3 columns appears 3 times in row.cells,
+    each with identical content. Left unguarded, a multi-paragraph merged
+    cell (question text + several ASSESSOR KEY/OPTION lines) gets processed
+    2-3x, since the existing "skip if identical to the immediately preceding
+    item" dedup only catches single-line repeats, not a whole block replaying.
+    """
+    seen_tc_ids: set[int] = set()
+    for cell in row.cells:
+        tc_id = id(cell._tc)
+        if tc_id in seen_tc_ids:
+            continue
+        seen_tc_ids.add(tc_id)
+        yield cell
+
+
 # ===========================================================================
 # Template detection
 # ===========================================================================
@@ -369,7 +391,7 @@ def _extract_template_a(doc: Document) -> list[dict]:
             for row in block.rows:
                 if _is_boilerplate_row_a(row):
                     continue  # skip Instructions, Rubric, footer rows, etc.
-                for cell in row.cells:
+                for cell in _unique_row_cells(row):
                     for para in cell.paragraphs:
                         process_para(para)
 
@@ -442,7 +464,7 @@ def _extract_template_bc(doc: Document) -> list[dict]:
 
         elif isinstance(block, Table):
             for row in block.rows:
-                for cell in row.cells:
+                for cell in _unique_row_cells(row):
                     for para in cell.paragraphs:
                         push(para.text)
                         for tb_text, _ in _textbox_texts(para):
@@ -490,7 +512,7 @@ def _extract_generic(doc: Document) -> list[dict]:
             process_para(block)
         elif isinstance(block, Table):
             for row in block.rows:
-                for cell in row.cells:
+                for cell in _unique_row_cells(row):
                     for para in cell.paragraphs:
                         process_para(para)
 
