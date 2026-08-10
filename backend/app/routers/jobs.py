@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db, SessionLocal
 from app.models.job import ExtractedData, UploadJob
-from app.services.canvas import create_quiz, sync_question
+from app.services.canvas import create_quiz, sync_question, _base_url as canvas_base_url
 from app.services.classifier import classify_document_type
 from app.services.consistency import check_with_retry
 from app.services.converter import extract_document, parse_points_per_question
@@ -156,6 +156,11 @@ def job_detail(job_id: str, db: Session = Depends(get_db)):
         questions = data.edited_json or data.json_output or []
         has_edits = data.edited_json is not None
 
+    canvas_url = (
+        f"{canvas_base_url()}/courses/{job.canvas_course_id}/quizzes/{job.canvas_quiz_id}"
+        if job.canvas_quiz_id else None
+    )
+
     return {
         "job_id":             job.id,
         "filename":           job.filename,
@@ -170,6 +175,9 @@ def job_detail(job_id: str, db: Session = Depends(get_db)):
         "original_questions": data.json_output or [] if data else [],
         "error_message":      job.error_message,
         "flag_count":         _flag_count(job),
+        "canvas_quiz_id":     job.canvas_quiz_id,
+        "canvas_url":         canvas_url,
+        "synced_at":          job.synced_at.isoformat() if job.synced_at else None,
     }
 
 
