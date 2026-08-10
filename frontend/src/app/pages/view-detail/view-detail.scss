@@ -49,6 +49,7 @@
   &.step-completed { background: #16a34a; }
   &.step-active { background: #fff; border: 2px solid #2563eb; color: #2563eb; }
   &.step-pending { background: #f1f5f9; color: #94a3b8; }
+  &.step-error { background: #dc2626; }
 }
 
 .step-label {
@@ -88,6 +89,40 @@
     background: #fff7ed;
     border: 1px solid #fed7aa;
     color: #ea580c;
+  }
+}
+
+.sync-progress {
+  margin: 0 28px 12px;
+  height: 4px;
+  border-radius: 2px;
+  background: #e2e8f0;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.sync-progress-bar {
+  height: 100%;
+  width: 40%;
+  border-radius: 2px;
+  background: #2563eb;
+  animation: sync-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes sync-progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
+.sync-banner {
+  margin: 0 28px 12px;
+  white-space: normal;
+  flex-shrink: 0;
+
+  a {
+    color: inherit;
+    text-decoration: underline;
+    font-weight: 700;
   }
 }
 
