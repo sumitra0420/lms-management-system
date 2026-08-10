@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { ApiService, canonicalStatus, PipelineQuestion } from '../../services/api.service';
+import { ApiService, canonicalStatus, PipelineQuestion, SyncResult } from '../../services/api.service';
 
 interface ConflictEntry {
   field: string;
@@ -42,6 +42,16 @@ export class ViewDetail implements OnInit {
   private _originalQuestions: PipelineQuestion[] = [];
   private _editedQuestions: PipelineQuestion[] = [];
   private _backendMeta: object | null = null;
+
+  syncing    = false;
+  syncResult: SyncResult | null = null;
+  syncError:  string | null = null;
+
+  // From a previous session (loaded via GET job detail), distinct from
+  // syncResult (a live sync just performed in THIS session, which also
+  // has per-question failure detail this doesn't).
+  previouslySyncedUrl: string | null = null;
+  previouslySyncedAt:  string | null = null;
 
   pipelineSteps = [
     { label: 'Upload',     status: 'completed' },
@@ -150,6 +160,17 @@ export class ViewDetail implements OnInit {
           total_points:      detail.total_points,
           attempt:           detail.attempt,
         };
+
+        // Reflect a sync from a PREVIOUS session/page load, not just a
+        // live click — without this, refreshing the page after a
+        // successful sync loses all trace of it (canvas_quiz_id is saved
+        // in the DB, but nothing here read it back).
+        if (detail.canvas_quiz_id) {
+          this.previouslySyncedUrl = detail.canvas_url ?? null;
+          this.previouslySyncedAt  = detail.synced_at ?? null;
+          this.pipelineSteps[3].status = 'completed';
+        }
+
         this.cdr.detectChanges();
       },
     });
@@ -208,6 +229,27 @@ export class ViewDetail implements OnInit {
     this.api.saveEdits(this.jobId, this.questions).subscribe({
       next: () => this.saving = false,
       error: () => this.saving = false,
+    });
+  }
+
+  // ── Canvas sync ───────────────────────────────────────────────────────────
+
+  syncToCanvas() {
+    if (!this.jobId || this.syncing) return;
+    this.syncing    = true;
+    this.syncResult = null;
+    this.syncError  = null;
+    this.api.syncToCanvas(this.jobId).subscribe({
+      next: (result) => {
+        this.syncing    = false;
+        this.syncResult = result;
+        this.pipelineSteps[3].status = result.failures.length === 0 ? 'completed' : 'error';
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.syncing   = false;
+        this.syncError = err?.error?.detail ?? 'Sync failed — check the backend logs.';
+      },
     });
   }
 
