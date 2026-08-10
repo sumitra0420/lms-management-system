@@ -68,6 +68,23 @@ export interface JobDetail {
   original_questions: PipelineQuestion[];
   error_message?: string | null;
   flag_count?: number;
+  canvas_quiz_id?: number | null;
+  canvas_url?: string | null;
+  synced_at?: string | null;
+}
+
+export interface SyncFailure {
+  question_id: string | null;
+  error: string;
+}
+
+export interface SyncResult {
+  job_id: string;
+  canvas_quiz_id: number;
+  canvas_url: string;
+  total_questions: number;
+  synced_questions: number;
+  failures: SyncFailure[];
 }
 
 export interface RecentJob {
@@ -152,5 +169,11 @@ export class ApiService {
 
   saveEdits(jobId: string, questions: PipelineQuestion[]): Observable<{ status: string }> {
     return this.http.patch<{ status: string }>(`${this.baseUrl}/jobs/${jobId}/questions`, { questions });
+  }
+
+  syncToCanvas(jobId: string): Observable<SyncResult> {
+    // No course_id sent yet — backend defaults to the Canvas test course
+    // used to build this; becomes a real UI choice later.
+    return this.http.post<SyncResult>(`${this.baseUrl}/jobs/${jobId}/sync`, {});
   }
 }
