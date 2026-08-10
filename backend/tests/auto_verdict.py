@@ -6,7 +6,7 @@ instead of requiring you to check every row by hand.
 Reuses two pieces of logic that already exist elsewhere rather than
 reinventing them:
   - question-level matching: the same greedy text-similarity matcher
-    score_question_detection.py uses (MATCH_THRESHOLD=0.75) to pair a
+    matching.py provides (MATCH_THRESHOLD=0.75) to pair a
     predicted question with its ground-truth counterpart.
   - field-level comparison: consistency.py's own _str_sim/_choices_sim and
     FIELD_CONFLICT_THRESHOLDS (0.90 answer text, 0.85 choices) — the same
@@ -50,7 +50,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.services.consistency import _str_sim, _choices_sim, FIELD_CONFLICT_THRESHOLDS
-from tests.score_question_detection import _greedy_match, MATCH_THRESHOLD
+from tests.matching import _greedy_match, MATCH_THRESHOLD
 from tests.export_flag_review import _flag_reasons, _format_conflicts
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")

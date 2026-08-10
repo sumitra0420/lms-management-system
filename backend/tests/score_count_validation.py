@@ -119,7 +119,7 @@ def main(run: str = DEFAULT_RUN):
     summary = []
     skipped = 0
 
-    header = f"{'File':<55} {'Field':<24} {'GT':>6} {'Pred':>6} {'Match':>6}"
+    header = f"{'File':<55} {'Field':<24} {'GT':>6} {'Pred':>6} {'Match':>6} {'ModelA':>7} {'ModelB':>7}"
     print(header)
     print("-" * len(header))
 
@@ -138,10 +138,17 @@ def main(run: str = DEFAULT_RUN):
             pred_record = json.load(f)
 
         comparisons = _compare_file(gt_record, pred_record)
+        model_a_count = pred_record.get("model_a_question_count")
+        model_b_count = pred_record.get("model_b_question_count")
 
         out_path = os.path.join(output_dir, fname)
         with open(out_path, "w", encoding="utf-8") as f:
-            json.dump({"filename": fname, "comparisons": comparisons}, f, indent=2, ensure_ascii=False)
+            json.dump({
+                "filename": fname,
+                "comparisons": comparisons,
+                "model_a_question_count": model_a_count,
+                "model_b_question_count": model_b_count,
+            }, f, indent=2, ensure_ascii=False)
 
         all_match = all(c["match"] for c in comparisons.values())
         first = True
@@ -150,14 +157,17 @@ def main(run: str = DEFAULT_RUN):
             if c["match"]:
                 field_match_counts[field] += 1
             mark = "OK" if c["match"] else "MISMATCH"
-            fname_col = fname[:55] if first else ""
-            print(f"{fname_col:<55} {field:<24} {c['ground_truth']:>6} {c['predicted']:>6} {mark:>6}")
+            fname_col  = fname[:55] if first else ""
+            model_cols = f"{model_a_count:>7} {model_b_count:>7}" if first else f"{'':>7} {'':>7}"
+            print(f"{fname_col:<55} {field:<24} {c['ground_truth']:>6} {c['predicted']:>6} {mark:>6} {model_cols}")
             first = False
 
         summary.append({
             "filename": fname,
             "all_match": all_match,
             "comparisons": comparisons,
+            "model_a_question_count": model_a_count,
+            "model_b_question_count": model_b_count,
         })
 
     print("-" * len(header))
@@ -187,10 +197,13 @@ def main(run: str = DEFAULT_RUN):
     csv_path = os.path.join(output_dir, "_summary.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["filename", "field", "ground_truth", "predicted", "match", "diff"])
+        writer.writerow(["filename", "field", "ground_truth", "predicted", "match", "diff", "model_a_question_count", "model_b_question_count"])
         for row in summary:
             for field, c in row["comparisons"].items():
-                writer.writerow([row["filename"], field, c["ground_truth"], c["predicted"], c["match"], c["diff"]])
+                writer.writerow([
+                    row["filename"], field, c["ground_truth"], c["predicted"], c["match"], c["diff"],
+                    row["model_a_question_count"], row["model_b_question_count"],
+                ])
         writer.writerow([])
         writer.writerow(["field", "matched", "total", "agreement_pct"])
         for field in fields:

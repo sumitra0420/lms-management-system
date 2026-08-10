@@ -10,7 +10,7 @@ ground truth, the way count_validation.py checks aggregate totals but at
 individual-field, per-question granularity instead.
 
 Matches predicted questions to ground truth using the same greedy
-text-similarity matcher score_question_detection.py uses (MATCH_THRESHOLD,
+text-similarity matcher matching.py provides (MATCH_THRESHOLD,
 autojunk=False), then checks each field EXACTLY (character-for-character,
 after trimming surrounding whitespace) against ground truth — no fuzzy
 tolerance, intentionally stricter than auto_verdict.py's similarity-threshold
@@ -63,7 +63,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from tests.score_question_detection import _greedy_match, MATCH_THRESHOLD
+from tests.matching import _greedy_match, MATCH_THRESHOLD
 from app.services.consistency import normalize_quotes
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")

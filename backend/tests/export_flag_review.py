@@ -1,7 +1,6 @@
 """
 Exports every question from an integration test run into a flat CSV for
-manual TP/FP/TN/FN labelling of the FLAGGING decision (not question
-detection — see score_question_detection.py for that).
+manual TP/FP/TN/FN labelling of the FLAGGING decision.
 
 "flagged" here is the same boolean run_integration_test.py already computes
 per question (low A/B consistency score, schema validation failure, or
