@@ -111,6 +111,26 @@ def _field_match(field: str, pred: dict, gt: dict) -> bool:
     raise ValueError(field)
 
 
+def _field_value(field: str, obj: dict, is_gt: bool) -> str:
+    """Full (untruncated) string for a field's value, for detail.csv — so
+    a reviewer can see exactly what was predicted vs. expected for every
+    row without cross-referencing the terminal mismatch printout."""
+    if field == "question_text":
+        return _norm_text(obj.get("question") if is_gt else obj.get("text"))
+    if field == "marks":
+        val = obj.get("mark") if is_gt else obj.get("points")
+        return "" if val is None else str(val)
+    if field == "correct_answer":
+        return _norm_text(_gt_answer(obj) if is_gt else obj.get("correct_answer"))
+    if field == FIELD_CHOICES:
+        choices = obj.get("choices") or []
+        return " | ".join(
+            f"[correct] {c.get('text', '')}" if c.get("correct") else c.get("text", "")
+            for c in choices
+        )
+    raise ValueError(field)
+
+
 def _field_display(field: str, pred: dict, gt: dict) -> tuple:
     """Short pred-vs-gt strings for the mismatch printout — truncated so a
     long answer/choices list doesn't blow out the terminal line."""
@@ -139,7 +159,10 @@ def _score_file(gt_record: dict, pred_record: dict, tallies: dict, rows: list, h
     gt_texts   = [q.get("question") or "" for q in gt_questions]
     pred_texts = [q.get("text")     or "" for q in pred_questions]
 
-    matched_pairs, unmatched_gt, unmatched_pred = _greedy_match(gt_texts, pred_texts, MATCH_THRESHOLD)
+    # unmatched_gt isn't needed separately — the main loop below iterates
+    # every gt_questions index regardless, so an unmatched one is already
+    # covered there (pred_j comes back None for it).
+    matched_pairs, _, unmatched_pred = _greedy_match(gt_texts, pred_texts, MATCH_THRESHOLD)
     matched_by_gt = {gt_i: pred_j for gt_i, pred_j, _ in matched_pairs}
 
     file_tally = {f: {"correct": 0, "total": 0} for f in ALL_FIELDS}
@@ -159,6 +182,8 @@ def _score_file(gt_record: dict, pred_record: dict, tallies: dict, rows: list, h
         for field in ALL_FIELDS:
             if field not in fields:
                 row[field] = ""  # not applicable to this question's type
+                row[f"{field}_predicted"] = ""
+                row[f"{field}_ground_truth"] = ""
                 continue
             correct = (pred_j is not None) and _field_match(field, pred, gt)
             tallies[field]["correct"]    += int(correct)
@@ -166,6 +191,8 @@ def _score_file(gt_record: dict, pred_record: dict, tallies: dict, rows: list, h
             file_tally[field]["correct"] += int(correct)
             file_tally[field]["total"]   += 1
             row[field] = correct
+            row[f"{field}_predicted"]    = "(question not extracted)" if pred_j is None else _field_value(field, pred, is_gt=False)
+            row[f"{field}_ground_truth"] = _field_value(field, gt, is_gt=True)
 
             if not correct:
                 if pred_j is None:
@@ -259,10 +286,17 @@ def main(run: str):
     if skipped:
         print(f"{skipped} file(s) pending — run run_integration_test.py to fill these in.")
 
-    # Detail CSV — one row per ground-truth question, pass/fail per field
+    # Detail CSV — one row per ground-truth question. For each field: a
+    # pass/fail bool (quick filter/count) plus the actual predicted and
+    # ground-truth values (so a mismatch is readable right in the row,
+    # no cross-referencing the terminal mismatch printout needed).
+    detail_fields = ["filename", "gt_question_id", "matched"]
+    for field in ALL_FIELDS:
+        detail_fields += [field, f"{field}_predicted", f"{field}_ground_truth"]
+
     detail_path = os.path.join(out_dir, "detail.csv")
     with open(detail_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["filename", "gt_question_id", "matched"] + ALL_FIELDS)
+        writer = csv.DictWriter(f, fieldnames=detail_fields)
         writer.writeheader()
         writer.writerows(rows)
 
