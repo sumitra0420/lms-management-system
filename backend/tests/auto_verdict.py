@@ -49,7 +49,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from app.services.consistency import _str_sim, _choices_sim, FIELD_CONFLICT_THRESHOLDS
+from app.services.similarity import _str_sim, _choices_sim, FIELD_CONFLICT_THRESHOLDS
 from tests.matching import _greedy_match, MATCH_THRESHOLD
 from tests.export_flag_review import _flag_reasons, _format_conflicts
 

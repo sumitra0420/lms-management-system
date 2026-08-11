@@ -64,7 +64,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from tests.matching import _greedy_match, MATCH_THRESHOLD
-from app.services.consistency import normalize_quotes
+from app.services.similarity import normalize_quotes
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")
 GT_DIR   = os.path.join(BASE_DIR, "groundtruth")

@@ -214,7 +214,7 @@ def _normalise(raw_json: str, source: str, filename: str = "") -> dict:
 # OpenAI-compatible models (openai.*) — uses /v1/responses via httpx
 # ---------------------------------------------------------------------------
 
-async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str) -> str:
+async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str, system_prompt: str) -> str:
     url = f"{base_url.rstrip('/')}/responses"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -222,7 +222,7 @@ async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str)
     }
     body = {
         "model": model_id,
-        "input": f"{SYSTEM_PROMPT}\n\n{text}",
+        "input": f"{system_prompt}\n\n{text}",
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -249,14 +249,14 @@ async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str)
 # Anthropic Claude models (anthropic.*) — uses AnthropicBedrockMantle
 # ---------------------------------------------------------------------------
 
-async def _extract_bedrock_iam(text: str, region: str, model_id: str) -> str:
+async def _extract_bedrock_iam(text: str, region: str, model_id: str, system_prompt: str) -> str:
     # Converse API works for ALL Bedrock models (Claude, OpenAI, etc.)
     # boto3 reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from environment
     def _invoke():
         client = boto3.client("bedrock-runtime", region_name=region, config=_BEDROCK_CLIENT_CONFIG)
         response = client.converse(
             modelId=model_id,
-            system=[{"text": SYSTEM_PROMPT}],
+            system=[{"text": system_prompt}],
             messages=[{"role": "user", "content": [{"text": text}]}],
             inferenceConfig={"maxTokens": 8192},
         )
@@ -270,7 +270,7 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str) -> str:
 # Dispatcher — picks the right client based on model ID prefix
 # ---------------------------------------------------------------------------
 
-async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str, region_env: str) -> str:
+async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str, region_env: str, system_prompt: str = SYSTEM_PROMPT) -> str:
     api_key  = os.getenv(api_key_env, "")
     base_url = os.getenv(base_url_env, "")
     model_id = os.getenv(model_id_env, "")
@@ -283,10 +283,10 @@ async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_i
 
     if base_url:
         # bedrock-mantle Quickstart bearer token via httpx
-        return await _extract_openai(text, api_key, base_url, model_id)
+        return await _extract_openai(text, api_key, base_url, model_id, system_prompt)
     else:
         # IAM-based via Converse API — works for Claude, OpenAI, and any Bedrock model
-        return await _extract_bedrock_iam(text, region, model_id)
+        return await _extract_bedrock_iam(text, region, model_id, system_prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -321,3 +321,161 @@ async def extract(text: str, filename: str = "") -> dict:
         "normalised_a": norm_a,
         "normalised_b": norm_b,
     }
+
+
+async def extract_a_only(text: str, filename: str = "") -> dict:
+    """
+    Run Model A alone — the extractor half of the verify-and-retry flow,
+    where Model B's job is checking A's output (see verify_extraction)
+    instead of independently re-extracting the whole document.
+    """
+    model_a_id = os.getenv("MODEL_A_ID", "")
+    logger.info(f"[Extractor] [{filename}] Starting Model A extraction | Model A: {model_a_id}")
+
+    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION")
+    norm_a = _normalise(raw_a, "model_a", filename)
+
+    logger.info(f"[Extractor] [{filename}] Model A → {len(norm_a.get('questions', []))} questions | error: {norm_a.get('error')}")
+    logger.debug(f"[Extractor] [{filename}] Raw A (first 800 chars):\n{raw_a[:800]}")
+
+    return {"raw_a": raw_a, "normalised_a": norm_a}
+
+
+# ---------------------------------------------------------------------------
+# Verification (Model B checks Model A's candidate JSON against the source
+# text, instead of independently re-extracting from scratch)
+# ---------------------------------------------------------------------------
+
+VERIFY_SYSTEM_PROMPT = """You are a strict fact-checker for an AI-extracted vocational assessment quiz.
+
+You are given SOURCE TEXT (the original document) and a CANDIDATE EXTRACTION (JSON produced by
+another AI from that text). Your only job is to check whether the candidate is a faithful,
+complete extraction of the source — you do NOT re-extract or invent an alternative version.
+
+Check every question in the candidate against these rules:
+
+QUESTION COUNT:
+  Every numbered/lettered question in the source text must appear exactly once in the candidate.
+  Do not count multi-part sub-questions as merged into one, and do not count any question twice.
+
+TEXT FIDELITY:
+  Each question's "text" must match the source verbatim (not paraphrased, summarised, or truncated).
+
+TYPE CLASSIFICATION:
+  If a question is followed by any "OPTION:" line(s) in the source, it MUST be classified
+  "multiple_choice" (or "true_false" for a True/False option pair) — regardless of question wording.
+  Only "short_answer" when there are NO "OPTION:" lines, just ASSESSOR KEY / ANSWER GUIDANCE lines.
+
+ANSWER COMPLETENESS:
+  "correct_answer" must include EVERY "ASSESSOR KEY:" bullet from the source for that question,
+  verbatim, joined by " | " — never fewer than the source lists, even if the question wording
+  asks for a smaller number than the source's marking guide provides.
+
+CHOICES COMPLETENESS (multiple_choice only):
+  "choices" must include every "OPTION:" line AND every "ASSESSOR KEY:" line as one combined list,
+  each marked "correct": true only for ASSESSOR KEY entries.
+
+NO HALLUCINATION:
+  Every field's content must actually appear in the source text — nothing invented or corrected.
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY this JSON with no explanation outside it:
+{
+  "valid": true,
+  "source_question_count": 0,
+  "candidate_question_count": 0,
+  "issues": [
+    {"question_id": "Q5", "field": "type", "problem": "Has OPTION lines in source but classified as short_answer"}
+  ]
+}
+"valid" is true only when "issues" is empty. Be specific in "problem" — it is used verbatim to
+tell the extracting model what to fix, so name the exact question and what's wrong with it."""
+
+
+def _normalise_verification(raw_json: str) -> dict:
+    json_text = _extract_json_from_text(raw_json)
+    try:
+        data = json.loads(json_text)
+    except json.JSONDecodeError as e:
+        # Fail closed: if the verifier's own output can't be parsed, treat the
+        # candidate as unverified rather than silently trusting it.
+        return {
+            "valid": False,
+            "source_question_count": None,
+            "candidate_question_count": None,
+            "issues": [{"question_id": "", "field": "", "problem": f"Verifier response was not valid JSON: {e}"}],
+        }
+
+    return {
+        "valid":                     bool(data.get("valid", False)),
+        "source_question_count":     data.get("source_question_count"),
+        "candidate_question_count":  data.get("candidate_question_count"),
+        "issues": [
+            {
+                "question_id": str(i.get("question_id") or ""),
+                "field":       str(i.get("field") or ""),
+                "problem":     str(i.get("problem") or ""),
+            }
+            for i in (data.get("issues") or [])
+        ],
+    }
+
+
+async def verify_extraction(text: str, candidate_json: dict, filename: str = "") -> dict:
+    """
+    Model B checks Model A's candidate JSON against the source text and
+    reports whether it's faithful/complete — a narrower, easier task than
+    independently re-extracting the whole document, so it isn't sunk by
+    Model B's weaker performance on the harder task.
+    """
+    model_b_id = os.getenv("MODEL_B_ID", "")
+    verify_input = (
+        f"SOURCE TEXT:\n{text}\n\n"
+        f"CANDIDATE EXTRACTION (JSON):\n{json.dumps(candidate_json, indent=2)}"
+    )
+
+    raw = await _extract_model(
+        verify_input, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION",
+        system_prompt=VERIFY_SYSTEM_PROMPT,
+    )
+    result = _normalise_verification(raw)
+
+    logger.info(
+        f"[Verifier] [{filename}] Model B ({model_b_id}) → valid={result['valid']} "
+        f"issues={len(result['issues'])} "
+        f"(source_count={result['source_question_count']}, candidate_count={result['candidate_question_count']})"
+    )
+    if result["issues"]:
+        # Only the compact summary line above shows during normal server runs —
+        # this prints the actual problem text per question so you don't need
+        # to open the job-detail JSON just to see what Model B flagged.
+        logger.info(f"[Verifier] [{filename}] Issues:\n{json.dumps(result['issues'], indent=2)}")
+    logger.debug(f"[Verifier] [{filename}] Raw verify response (first 800 chars):\n{raw[:800]}")
+
+    return result
+
+
+if __name__ == "__main__":
+    # Standalone smoke test for the new extract-then-verify pair, run before
+    # wiring it into consistency.py's retry loop. Usage:
+    #   python app/services/extractor.py "tests/input/Quiz/<some file>.docx"
+    import sys
+    from app.services.converter import extract_document
+
+    path = sys.argv[1] if len(sys.argv) > 1 else "tests/input/Quiz/SITHCCC029_Knowledge_Test_ShortAnswer.docx"
+    with open(path, "rb") as f:
+        file_bytes = f.read()
+    doc_text, _ = extract_document(file_bytes, path)
+
+    async def _run():
+        print(f"--- Extracting with Model A from {path} ---")
+        a_result = await extract_a_only(doc_text, path)
+        questions = a_result["normalised_a"].get("questions", [])
+        print(f"Model A extracted {len(questions)} questions "
+              f"(error: {a_result['normalised_a'].get('error')})\n")
+
+        print("--- Verifying with Model B ---")
+        verification = await verify_extraction(doc_text, a_result["normalised_a"], path)
+        print(json.dumps(verification, indent=2))
+
+    asyncio.run(_run())

@@ -11,7 +11,7 @@ from app.db import get_db, SessionLocal
 from app.models.job import ExtractedData, UploadJob
 from app.services.canvas import create_quiz, sync_question, _base_url as canvas_base_url
 from app.services.classifier import classify_document_type
-from app.services.consistency import check_with_retry
+from app.services.verification import check_with_retry
 from app.services.converter import extract_document, parse_points_per_question
 from app.services.storage import download_file, generate_presigned_url
 from app.services.grounding import check_question_grounding
@@ -245,7 +245,7 @@ def _process_job(job_id: str, s3_key: str, filename: str):
         with _extraction_lock:
             result = asyncio.run(check_with_retry(text, filename))
 
-        consistency  = result.get("consistency", {})
+        verification = result.get("verification", {})
         questions    = result["normalised_a"].get("questions", [])
 
         # Points: the instructions block ("Each question is graded out of N
@@ -258,13 +258,13 @@ def _process_job(job_id: str, s3_key: str, filename: str):
             questions = [{**q, "points": rubric_points} for q in questions]
 
         total_points = sum(q.get("points") or 0 for q in questions)
-        per_question = consistency.get("details", {}).get("per_question", [])
-        consistent   = consistency.get("consistent", False)
+        per_question = verification.get("details", {}).get("per_question", [])
+        verified     = verification.get("verified", False)
 
         # When no per-question data is available (all retries had extraction
         # errors), default to 0.0 on a failed job so questions show as needing
-        # review rather than falsely appearing as fully consistent (1.0).
-        missing_score_default = 1.0 if consistent else 0.0
+        # review rather than falsely appearing as fully verified (1.0).
+        missing_score_default = 1.0 if verified else 0.0
 
         annotated = []
         for i, q in enumerate(questions):
@@ -274,7 +274,7 @@ def _process_job(job_id: str, s3_key: str, filename: str):
                 **q,
                 "flagged":           q_score < 0.90,
                 "consistency_score": q_score,
-                "conflicts":         pq.get("conflicts", {}),
+                "issues":            pq.get("issues", []),
             })
 
         # JSON Schema Validation — reject/flag questions whose shape doesn't
@@ -304,12 +304,12 @@ def _process_job(job_id: str, s3_key: str, filename: str):
                     f"(score={grounding['grounding_score']}): {grounding['ungrounded_fields']}"
                 )
 
-        consistent = (
-            consistency.get("consistent", False)
+        verified = (
+            verification.get("verified", False)
             and all(q["schema_valid"] for q in annotated)
             and not any(q["hallucination_detected"] for q in annotated)
         )
-        attempt    = result.get("attempt", 1)
+        attempt = result.get("attempt", 1)
 
         db.add(ExtractedData(
             job_id            = job_id,
@@ -319,16 +319,16 @@ def _process_job(job_id: str, s3_key: str, filename: str):
             raw_text          = text,
             instructions_text = instructions or None,
             json_output       = annotated,
-            consistent        = consistent,
-            consistency_score = consistency.get("score", 0),
+            consistent        = verified,
+            consistency_score = verification.get("score", 0),
             total_questions   = len(annotated),
             total_points      = total_points,
             attempt           = attempt,
         ))
 
         job = db.query(UploadJob).filter(UploadJob.id == job_id).first()
-        job.status            = "passed" if consistent else "flagged"
-        job.consistency_score = consistency.get("score", 0)
+        job.status            = "passed" if verified else "flagged"
+        job.consistency_score = verification.get("score", 0)
         job.total_points      = total_points
         job.retry_count       = attempt
         db.commit()

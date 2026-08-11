@@ -17,7 +17,7 @@ from difflib import SequenceMatcher
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from app.services.consistency import normalize_quotes
+from app.services.similarity import normalize_quotes
 
 MATCH_THRESHOLD = 0.75
 
