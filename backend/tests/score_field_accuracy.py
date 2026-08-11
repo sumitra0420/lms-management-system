@@ -88,11 +88,22 @@ def _gt_answer(gt: dict) -> str:
     return gt.get("correct_answer") if gt.get("correct_answer") is not None else (gt.get("answer") or "")
 
 
+# Trailing punctuation on a bullet (a "." or ":" right before the "|"
+# separator, or at the very end of the whole answer) is presentation, not
+# content — "users:" and "users" are the same answer, just transcribed
+# with/without the source document's trailing colon.
+_TRAILING_PUNCT_RE = re.compile(r"[.:;,]+$")
+
+
 def _answer_key(s) -> frozenset:
-    normalized = _norm_text(s).rstrip(".").strip()
+    normalized = _norm_text(s)
     if not normalized:
         return frozenset()
-    return frozenset(_norm_text(part) for part in _ANSWER_SEPARATOR_RE.split(normalized) if _norm_text(part))
+    parts = (
+        _TRAILING_PUNCT_RE.sub("", _norm_text(part)).strip()
+        for part in _ANSWER_SEPARATOR_RE.split(normalized)
+    )
+    return frozenset(part for part in parts if part)
 
 
 def _choices_key(choices: list) -> frozenset:
