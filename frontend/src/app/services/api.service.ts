@@ -2,9 +2,9 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, from } from 'rxjs';
 
-export interface FieldConflict {
-  value_a: any;
-  value_b: any;
+export interface VerificationIssue {
+  field: string;
+  problem: string;
 }
 
 export interface PipelineQuestion {
@@ -16,9 +16,8 @@ export interface PipelineQuestion {
   points: number | null;
   feedback: string;
   flagged?: boolean;
-  flagReason?: string;
   consistency_score?: number;
-  conflicts?: { [field: string]: FieldConflict };
+  issues?: VerificationIssue[];
   schema_valid?: boolean;
   schema_errors?: string[];
   grounding_score?: number;
