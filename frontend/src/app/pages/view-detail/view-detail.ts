@@ -164,6 +164,16 @@ export class ViewDetail implements OnInit {
     });
   }
 
+  // ── Manual override ───────────────────────────────────────────────────────
+
+  // Client-side only: a reviewer confirming "I've checked the flagged
+  // questions, they're fine" unlocks Sync for this session. Per-question
+  // flag markers (issues, tile grid) stay visible as a record of what was
+  // reviewed — this doesn't clear them, only lifts the job-level gate.
+  resolveAllFlags() {
+    this.mode = 'pass';
+  }
+
   // ── Canvas sync ───────────────────────────────────────────────────────────
 
   syncToCanvas() {
