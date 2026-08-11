@@ -13,9 +13,9 @@ For each file, checks whether these totals agree:
     total_correct_answers   MCQ only
     total_answers           short_answer only
 
-This mirrors the same idea as consistency.py's Model-A-vs-B count_score
-(n / max(count_a, count_b)), just applied between ground truth and the
-integration pipeline's output instead of between the two models.
+This mirrors the same idea as verification.py's source-vs-candidate count
+check (n / max(count_a, count_b)), just applied between ground truth and
+the integration pipeline's output instead of source text vs Model A.
 
 It does NOT tell you which question was missed or hallucinated — a
 count match can still hide a wrong question being swapped for another.
@@ -119,7 +119,7 @@ def main(run: str = DEFAULT_RUN):
     summary = []
     skipped = 0
 
-    header = f"{'File':<55} {'Field':<24} {'GT':>6} {'Pred':>6} {'Match':>6} {'ModelA':>7} {'ModelB':>7}"
+    header = f"{'File':<55} {'Field':<24} {'GT':>6} {'Pred':>6} {'Match':>6} {'ModelA':>7} {'VerifyB':>7}"
     print(header)
     print("-" * len(header))
 
@@ -139,7 +139,11 @@ def main(run: str = DEFAULT_RUN):
 
         comparisons = _compare_file(gt_record, pred_record)
         model_a_count = pred_record.get("model_a_question_count")
-        model_b_count = pred_record.get("model_b_question_count")
+        # Model B's independent recount of the source text (from the verify
+        # step) — not a full second extraction anymore, but still a useful
+        # cross-check: a mismatch here means B and A disagreed on how many
+        # questions the document actually contains.
+        verifier_source_recount = pred_record.get("source_question_count")
 
         out_path = os.path.join(output_dir, fname)
         with open(out_path, "w", encoding="utf-8") as f:
@@ -147,7 +151,7 @@ def main(run: str = DEFAULT_RUN):
                 "filename": fname,
                 "comparisons": comparisons,
                 "model_a_question_count": model_a_count,
-                "model_b_question_count": model_b_count,
+                "verifier_source_recount": verifier_source_recount,
             }, f, indent=2, ensure_ascii=False)
 
         all_match = all(c["match"] for c in comparisons.values())
@@ -158,7 +162,7 @@ def main(run: str = DEFAULT_RUN):
                 field_match_counts[field] += 1
             mark = "OK" if c["match"] else "MISMATCH"
             fname_col  = fname[:55] if first else ""
-            model_cols = f"{model_a_count:>7} {model_b_count:>7}" if first else f"{'':>7} {'':>7}"
+            model_cols = f"{model_a_count:>7} {verifier_source_recount:>7}" if first else f"{'':>7} {'':>7}"
             print(f"{fname_col:<55} {field:<24} {c['ground_truth']:>6} {c['predicted']:>6} {mark:>6} {model_cols}")
             first = False
 
@@ -167,7 +171,7 @@ def main(run: str = DEFAULT_RUN):
             "all_match": all_match,
             "comparisons": comparisons,
             "model_a_question_count": model_a_count,
-            "model_b_question_count": model_b_count,
+            "verifier_source_recount": verifier_source_recount,
         })
 
     print("-" * len(header))
@@ -197,12 +201,12 @@ def main(run: str = DEFAULT_RUN):
     csv_path = os.path.join(output_dir, "_summary.csv")
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["filename", "field", "ground_truth", "predicted", "match", "diff", "model_a_question_count", "model_b_question_count"])
+        writer.writerow(["filename", "field", "ground_truth", "predicted", "match", "diff", "model_a_question_count", "verifier_source_recount"])
         for row in summary:
             for field, c in row["comparisons"].items():
                 writer.writerow([
                     row["filename"], field, c["ground_truth"], c["predicted"], c["match"], c["diff"],
-                    row["model_a_question_count"], row["model_b_question_count"],
+                    row["model_a_question_count"], row["verifier_source_recount"],
                 ])
         writer.writerow([])
         writer.writerow(["field", "matched", "total", "agreement_pct"])

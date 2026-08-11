@@ -49,15 +49,15 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # app/main.py configures this same logging setup when running under uvicorn,
-# which is why [Extractor]/[Consistency] INFO logs are visible there. This
-# script never imports app.main, so without this call those INFO-level logs
-# (model start, per-model question counts, consistency scores, retry
+# which is why [Extractor]/[Verifier]/[Verification] INFO logs are visible
+# there. This script never imports app.main, so without this call those
+# INFO-level logs (model start, question counts, verification scores, retry
 # attempts) would be silently dropped — only WARNING+ would show.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 
 from app.services import extractor as extractor_module
 from app.services.classifier import classify_document_type
-from app.services.consistency import check_with_retry
+from app.services.verification import check_with_retry
 from app.services.converter import extract_document, parse_points_per_question
 from app.services.grounding import check_question_grounding
 from app.schemas.question import validate_questions
@@ -92,7 +92,7 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
 
     result = await check_with_retry(text, filename)
 
-    consistency = result.get("consistency", {})
+    verification = result.get("verification", {})
     questions = result["normalised_a"].get("questions", [])
 
     rubric_points = parse_points_per_question(instructions)
@@ -100,9 +100,9 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
         questions = [{**q, "points": rubric_points} for q in questions]
 
     total_points = sum(q.get("points") or 0 for q in questions)
-    per_question = consistency.get("details", {}).get("per_question", [])
-    consistent = consistency.get("consistent", False)
-    missing_score_default = 1.0 if consistent else 0.0
+    per_question = verification.get("details", {}).get("per_question", [])
+    verified = verification.get("verified", False)
+    missing_score_default = 1.0 if verified else 0.0
 
     annotated = []
     for i, q in enumerate(questions):
@@ -112,7 +112,7 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
             **q,
             "flagged": q_score < 0.90,
             "consistency_score": q_score,
-            "conflicts": pq.get("conflicts", {}),
+            "issues": pq.get("issues", []),
         })
 
     annotated = validate_questions(annotated)
@@ -128,14 +128,14 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
         if grounding["hallucination_detected"]:
             q["flagged"] = True
 
-    consistent = (
-        consistency.get("consistent", False)
+    verified = (
+        verification.get("verified", False)
         and all(q["schema_valid"] for q in annotated)
         and not any(q["hallucination_detected"] for q in annotated)
     )
 
     flags = _flag_breakdown(annotated)
-    details = consistency.get("details", {})
+    details = verification.get("details", {})
 
     return {
         "filename": filename,
@@ -144,24 +144,20 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
         "prompt_fingerprint": prompt_fingerprint,
         "model_a_id": os.getenv("MODEL_A_ID", ""),
         "model_b_id": os.getenv("MODEL_B_ID", ""),
-        "consistent": consistent,
-        "consistency_score": consistency.get("score", 0),
-        # The two components blended into consistency_score above (count_score
-        # * 0.3 + avg_question_score * 0.7) — surfaced separately because a low
-        # count_score (models disagreed on HOW MANY questions exist) needs a
-        # different fix than a low avg_question_score (models found the same
-        # questions but disagreed on content).
-        "count_score": details.get("count_score"),
-        "avg_question_score": details.get("avg_question_score"),
+        "verified": verified,
+        "verification_score": verification.get("score", 0),
+        # Model B's own recount of the source text vs how many questions
+        # Model A's candidate has — a mismatch is the highest-priority signal
+        # verification.py's retry hint acts on (see _build_retry_hint).
+        "source_question_count": details.get("source_question_count"),
+        "candidate_question_count": details.get("candidate_question_count"),
         "total_questions": len(annotated),
         "total_points": total_points,
         "attempt": result.get("attempt", 1),
         "flag_count": flags["total"],
         "flag_reasons": {k: v for k, v in flags.items() if k != "total"},
         "model_a_question_count": len(result["normalised_a"].get("questions", [])),
-        "model_b_question_count": len(result["normalised_b"].get("questions", [])),
         "model_a_error": result["normalised_a"].get("error"),
-        "model_b_error": result["normalised_b"].get("error"),
         "questions": annotated,
     }
 
@@ -211,10 +207,10 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR, prompt
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2, ensure_ascii=False)
 
-            status = "PASS" if record["consistent"] else "FLAG"
+            status = "PASS" if record["verified"] else "FLAG"
             print(
                 f"  {status} {filename} — {record['total_questions']}Q, "
-                f"consistency={record['consistency_score']:.4f}, "
+                f"verification={record['verification_score']:.4f}, "
                 f"flagged={record['flag_count']}, attempt={record['attempt']}, "
                 f"{elapsed:.1f}s"
             )
@@ -223,19 +219,17 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR, prompt
                 "status": status,
                 "prompt_label": record["prompt_label"],
                 "prompt_fingerprint": record["prompt_fingerprint"],
-                "consistent": record["consistent"],
-                "consistency_score": record["consistency_score"],
-                "count_score": record["count_score"],
-                "avg_question_score": record["avg_question_score"],
+                "verified": record["verified"],
+                "verification_score": record["verification_score"],
+                "source_question_count": record["source_question_count"],
+                "candidate_question_count": record["candidate_question_count"],
                 "total_questions": record["total_questions"],
                 "total_points": record["total_points"],
                 "flag_count": record["flag_count"],
                 "flag_reasons": record["flag_reasons"],
                 "attempt": record["attempt"],
                 "model_a_question_count": record["model_a_question_count"],
-                "model_b_question_count": record["model_b_question_count"],
                 "model_a_error": record["model_a_error"],
-                "model_b_error": record["model_b_error"],
                 "elapsed_sec": round(elapsed, 1),
             })
 

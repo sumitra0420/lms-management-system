@@ -3,9 +3,9 @@ Exports every question from an integration test run into a flat CSV for
 manual TP/FP/TN/FN labelling of the FLAGGING decision.
 
 "flagged" here is the same boolean run_integration_test.py already computes
-per question (low A/B consistency score, schema validation failure, or
-grounding/hallucination check). This script does not try to guess whether
-a flag was "deserved" — it just lays out, per question, whether the
+per question (Model B's verification flagged it, schema validation failure,
+or grounding/hallucination check). This script does not try to guess
+whether a flag was "deserved" — it just lays out, per question, whether the
 pipeline flagged it and why, with an empty human_verdict column for you to
 fill in by hand after checking the source document:
 
@@ -14,12 +14,10 @@ fill in by hand after checking the source document:
     TN = pipeline did NOT flag it AND the question is fine
     FN = pipeline did NOT flag it BUT the question actually has a problem
 
-Also includes conflict_fields/model_a_vs_b — the underlying per-field
-Model A vs Model B disagreement (from consistency.py's conflicts dict) for
-any flagged question, so you can see WHAT actually differed between the
-two models' outputs, not just that they disagreed. Useful for reporting
-which model tends to be the actual source of a flag (e.g. Model B
-returning a raw option letter like "C" instead of resolved answer text).
+Also includes issue_fields/predicted_value/verifier_problem — Model B's
+verification findings (from verification.py's per-question issues list)
+for any flagged question, so you can see WHAT Model A actually produced
+and WHY Model B flagged it, not just that something scored low.
 
 Run from inside backend/ (after run_integration_test.py has produced the run):
     python tests/export_flag_review.py integration/result_claude_nova_oldprompt_270726
@@ -65,27 +63,28 @@ def _fmt_conflict_value(v):
     # Full value, untruncated — this goes into a CSV cell for review, not a
     # terminal line, so there's no width to protect. Truncating here used
     # to cut the actual data (not just its display), silently hiding the
-    # real difference between Model A and Model B's answers.
+    # real content of the flagged field.
     return json.dumps(v) if isinstance(v, (list, dict)) else str(v)
 
 
-def _format_conflicts(q: dict) -> tuple[str, str]:
+def _format_issues(q: dict) -> tuple[str, str, str]:
     """
-    Renders Model A's and Model B's conflicting values as two separate,
-    aligned strings so a reviewer can see WHAT actually differed, not just
-    that consistency_score was low — e.g. model_a_value="Wheat flour pasta",
-    model_b_value="C" shows Model B returned a raw option letter instead of
-    the resolved answer text, a Model B formatting problem, not a genuine
-    disagreement about content. When a question has more than one
-    conflicting field, each side's values are joined with "|" in the same
-    order as conflict_fields, the same convention the choices column uses.
+    Renders Model B's verification findings for a flagged question: which
+    field(s), Model A's actual value for each, and B's specific problem
+    description — e.g. predicted_value="Wheat flour pasta -- Wheat flour...",
+    verifier_problem="Missing 'Rice flour pasta' in correct_answer for Q7"
+    tells a reviewer exactly what's incomplete, not just that something
+    scored low. Multiple issues on the same field are joined with "|", the
+    same convention the choices column uses.
     """
-    conflicts = q.get("conflicts") or {}
-    if not conflicts:
-        return "", ""
-    a_vals = " | ".join(_fmt_conflict_value(vals.get("value_a")) for vals in conflicts.values())
-    b_vals = " | ".join(_fmt_conflict_value(vals.get("value_b")) for vals in conflicts.values())
-    return a_vals, b_vals
+    issues = q.get("issues") or []
+    if not issues:
+        return "", "", ""
+    fields = list(dict.fromkeys(i.get("field", "") for i in issues if i.get("field")))
+    issue_fields    = ", ".join(fields)
+    predicted_value = " | ".join(_fmt_conflict_value(q.get(f)) for f in fields)
+    verifier_problem = " | ".join(i.get("problem", "") for i in issues)
+    return issue_fields, predicted_value, verifier_problem
 
 
 def main(run: str):
@@ -107,7 +106,7 @@ def main(run: str):
             record = json.load(f)
 
         for q in record.get("questions", []):
-            model_a_value, model_b_value = _format_conflicts(q)
+            issue_fields, predicted_value, verifier_problem = _format_issues(q)
             rows.append({
                 "filename":          record.get("filename", fname),
                 "question_id":       q.get("id"),
@@ -119,9 +118,9 @@ def main(run: str):
                 "flag_reasons":      _flag_reasons(q),
                 "consistency_score": q.get("consistency_score"),
                 "grounding_score":   q.get("grounding_score"),
-                "conflict_fields":   ", ".join((q.get("conflicts") or {}).keys()),
-                "model_a_value":     model_a_value,
-                "model_b_value":     model_b_value,
+                "issue_fields":      issue_fields,
+                "predicted_value":   predicted_value,
+                "verifier_problem":  verifier_problem,
                 "human_verdict":     "",  # fill in by hand: TP / FP / TN / FN
             })
 

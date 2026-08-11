@@ -8,10 +8,9 @@ reinventing them:
   - question-level matching: the same greedy text-similarity matcher
     matching.py provides (MATCH_THRESHOLD=0.75) to pair a
     predicted question with its ground-truth counterpart.
-  - field-level comparison: consistency.py's own _str_sim/_choices_sim and
-    FIELD_CONFLICT_THRESHOLDS (0.90 answer text, 0.85 choices) — the same
-    bar the pipeline already holds Model A vs Model B to, now applied to
-    prediction vs ground truth instead.
+  - field-level comparison: similarity.py's own _str_sim/_choices_sim and
+    FIELD_CONFLICT_THRESHOLDS (0.90 answer text, 0.85 choices), applied to
+    prediction vs ground truth.
 
 Verdict logic (standard confusion-matrix definitions):
     content correct    + flagged=True   -> FP (false alarm)
@@ -51,7 +50,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.services.similarity import _str_sim, _choices_sim, FIELD_CONFLICT_THRESHOLDS
 from tests.matching import _greedy_match, MATCH_THRESHOLD
-from tests.export_flag_review import _flag_reasons, _format_conflicts
+from tests.export_flag_review import _flag_reasons, _format_issues
 
 BASE_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results")
 GT_DIR   = os.path.join(BASE_DIR, "groundtruth")
@@ -115,7 +114,7 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
         else:
             verdict = "FN"
 
-        model_a_value, model_b_value = _format_conflicts(pred)
+        issue_fields, predicted_value, verifier_problem = _format_issues(pred)
         rows.append({
             "filename":          pred_record.get("filename", ""),
             "question_id":       pred.get("id"),
@@ -129,9 +128,9 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
             "flag_reasons":      _flag_reasons(pred),
             "consistency_score": pred.get("consistency_score"),
             "grounding_score":   pred.get("grounding_score"),
-            "conflict_fields":   ", ".join((pred.get("conflicts") or {}).keys()),
-            "model_a_value":     model_a_value,
-            "model_b_value":     model_b_value,
+            "issue_fields":      issue_fields,
+            "predicted_value":   predicted_value,
+            "verifier_problem":  verifier_problem,
             "content_issues":    "+".join(issues),
             "auto_verdict":      verdict,
             "human_override":    "",
@@ -152,9 +151,9 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
             "flag_reasons":      "",
             "consistency_score": "",
             "grounding_score":   "",
-            "conflict_fields":   "",
-            "model_a_value":     "",
-            "model_b_value":     "",
+            "issue_fields":      "",
+            "predicted_value":   "",
+            "verifier_problem":  "",
             "content_issues":    "missing_from_extraction",
             "auto_verdict":      "FN",  # a real problem (dropped question) that nothing ever flagged
             "human_override":    "",
@@ -163,7 +162,7 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
     for pred_j in unmatched_pred:
         pred = pred_questions[pred_j]
         flagged = bool(pred.get("flagged"))
-        model_a_value, model_b_value = _format_conflicts(pred)
+        issue_fields, predicted_value, verifier_problem = _format_issues(pred)
         rows.append({
             "filename":          pred_record.get("filename", ""),
             "question_id":       pred.get("id"),
@@ -177,9 +176,9 @@ def _score_file(gt_record: dict, pred_record: dict) -> list[dict]:
             "flag_reasons":      _flag_reasons(pred),
             "consistency_score": pred.get("consistency_score"),
             "grounding_score":   pred.get("grounding_score"),
-            "conflict_fields":   ", ".join((pred.get("conflicts") or {}).keys()),
-            "model_a_value":     model_a_value,
-            "model_b_value":     model_b_value,
+            "issue_fields":      issue_fields,
+            "predicted_value":   predicted_value,
+            "verifier_problem":  verifier_problem,
             "content_issues":    "no_ground_truth_match(hallucinated)",
             "auto_verdict":      "TP" if flagged else "FN",
             "human_override":    "",
