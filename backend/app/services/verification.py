@@ -1,15 +1,23 @@
 """
 Extract-then-verify pipeline: Model A (Claude) extracts, Model B (Nova)
-checks A's output against the source text and reports specific problems,
-and on failure we retry Model A's extraction with those problems folded
-into the prompt — up to MAX_RETRIES times.
+checks A's output against the source text and reports any problems it
+finds. On failure, Model A retries from scratch up to MAX_RETRIES times
+— but each retry is a plain, unmodified re-extraction of the original
+source text, NEVER a "fix this" instruction built from Model B's
+complaint. The best-scoring attempt across all tries is kept, not
+necessarily the last one, since a blind retry has no reason to be an
+improvement over an earlier attempt.
 
-Replaces the old "extract independently with both models, diff their
-outputs" approach (see git history for consistency.py): that treated any
-A/B disagreement as 50/50 uncertain, even when B was simply wrong on an
-easier-to-verify task than full extraction (e.g. misclassifying an MCQ as
-short_answer with no choices at all). Verification is a narrower job than
-extraction, so B's weaker raw accuracy matters less here.
+This replaces an earlier design (see git history) that folded Model B's
+complaints into the retry prompt as a correction instruction. That
+assumed Model B's complaints were reliable enough to guide a fix — in
+practice, even in this narrower verification role, Model B still
+produces a meaningful rate of hallucinated complaints (confirmed case:
+Q19 of "SITHFAB023 Knowledge Test 1" was CORRECT on the first pass, but
+a false complaint from Model B got fed back as a retry instruction, and
+Model A obediently changed the correct answer into a wrong one to
+satisfy it). Under this design, a false complaint can cost a wasted
+retry — it can no longer corrupt an answer that was already right.
 """
 
 import logging
@@ -19,45 +27,6 @@ from app.services.extractor import extract_a_only, verify_extraction
 logger = logging.getLogger(__name__)
 
 MAX_RETRIES = 3
-
-
-def _build_retry_hint(verification: dict) -> str:
-    issues     = verification.get("issues", [])
-    src_count  = verification.get("source_question_count")
-    cand_count = verification.get("candidate_question_count")
-
-    lines = []
-
-    # Question count is the top-priority signal — a miscount means whole
-    # questions are missing or wrongly merged, which no per-field fix can
-    # repair. Always call this out first and make it non-negotiable.
-    count_mismatch = src_count is not None and cand_count is not None and src_count != cand_count
-    if count_mismatch:
-        lines.append(
-            f"- QUESTION COUNT MISMATCH (highest priority): the source document has "
-            f"{src_count} questions, your extraction had {cand_count}. Before anything else, "
-            "recount every numbered question in the source text one at a time. Do not merge "
-            "multi-part questions into one, and do not skip any — every numbered item must "
-            "produce exactly one question object."
-        )
-
-    for issue in issues:
-        qid     = issue.get("question_id") or "unknown question"
-        field   = issue.get("field") or ""
-        problem = issue.get("problem") or ""
-        field_part = f" ({field})" if field else ""
-        lines.append(f"- {qid}{field_part}: {problem}")
-
-    if not lines:
-        lines.append("- Re-read every question carefully and ensure nothing is skipped or merged.")
-
-    hint_body = "\n".join(lines)
-    return (
-        f"\n\nIMPORTANT — a verification pass found problems with your previous extraction. "
-        f"Fix these specific issues:\n"
-        f"{hint_body}\n"
-        "Re-extract ALL questions from scratch with these corrections applied."
-    )
 
 
 def _to_result_shape(verification: dict, normalised_a: dict) -> dict:
@@ -102,56 +71,52 @@ def _to_result_shape(verification: dict, normalised_a: dict) -> dict:
     }
 
 
-async def check_with_retry(text: str, filename: str = "") -> dict:
+async def extract_and_verify(text: str, filename: str = "") -> dict:
     """
-    Runs the extract → verify → retry loop and returns:
+    Runs Model A, then Model B to check it. On failure, retries Model A
+    up to MAX_RETRIES times — always re-extracting the same, unmodified
+    source text, never a version adjusted with Model B's complaint.
+    Returns the best-scoring attempt seen (or the first one that passes,
+    returned immediately without using the remaining retry budget).
+
+    Returns:
         {
           "normalised_a": {...},
           "attempt": <int>,
           "verification": {"score", "verified", "details": {...}},
         }
     """
-    last_result           = None
-    last_verification_raw = None
-    # Track the attempt with the best verification score, so if later
-    # retries fail outright (e.g. malformed JSON), we still have meaningful
-    # per-question data to show instead of defaulting to all-flagged.
-    best_result_with_data: dict | None = None
+    best_result: dict | None = None
 
     for attempt in range(1, MAX_RETRIES + 1):
-        if attempt == 1 or last_verification_raw is None:
-            extract_text = text
-        else:
-            extract_text = text + _build_retry_hint(last_verification_raw)
-
-        result = await extract_a_only(extract_text, filename)
-        last_result = result
+        result = await extract_a_only(text, filename)
+        result["attempt"] = attempt
 
         if result["normalised_a"].get("error"):
-            if attempt < MAX_RETRIES:
-                continue
-            break
+            # A technical failure (malformed/truncated JSON), not a content
+            # judgment call — nothing to verify this attempt.
+            logger.warning(
+                f"[Verification] [{filename}] Attempt {attempt}/{MAX_RETRIES} extraction "
+                f"error, skipping verify: {result['normalised_a'].get('error')}"
+            )
+            if best_result is None:
+                result["verification"] = {"score": 0.0, "verified": False, "details": {}}
+                best_result = result
+            continue
 
-        verification_raw      = await verify_extraction(text, result["normalised_a"], filename)
-        last_verification_raw = verification_raw
-
-        verification         = _to_result_shape(verification_raw, result["normalised_a"])
+        verification_raw = await verify_extraction(text, result["normalised_a"], filename)
+        verification = _to_result_shape(verification_raw, result["normalised_a"])
         result["verification"] = verification
-        result["attempt"]      = attempt
 
         logger.info(
             f"[Verification] [{filename}] Attempt {attempt}/{MAX_RETRIES} — "
             f"score={verification['score']} verified={verification['verified']} "
-            f"(source_count={verification['details']['source_question_count']}, "
-            f"candidate_count={verification['details']['candidate_question_count']})"
+            f"(source_count={verification['details'].get('source_question_count')}, "
+            f"candidate_count={verification['details'].get('candidate_question_count')})"
         )
 
-        prev_best_score = (
-            best_result_with_data["verification"]["score"]
-            if best_result_with_data else -1
-        )
-        if verification["score"] > prev_best_score:
-            best_result_with_data = result
+        if best_result is None or verification["score"] > best_result["verification"]["score"]:
+            best_result = result
 
         if verification["verified"]:
             logger.info(f"[Verification] [{filename}] PASSED on attempt {attempt}")
@@ -160,27 +125,20 @@ async def check_with_retry(text: str, filename: str = "") -> dict:
         if attempt < MAX_RETRIES:
             logger.info(
                 f"[Verification] [{filename}] Failed on attempt {attempt} "
-                f"(score={verification['score']}), retrying..."
+                f"(score={verification['score']}), retrying (fresh attempt, no hint)..."
             )
 
-    # All retries exhausted without passing.
-    if last_result and "verification" not in last_result:
-        # Last attempt had an extraction error — no verification was computed.
-        borrowed = (
-            best_result_with_data["verification"]
-            if best_result_with_data
-            else {"score": 0.0, "verified": False, "details": {}}
-        )
-        last_result["verification"] = {**borrowed, "max_retries_reached": True}
-    else:
-        last_result["verification"]["max_retries_reached"] = True
-
-    return last_result
+    best_result["verification"]["max_retries_reached"] = True
+    logger.info(
+        f"[Verification] [{filename}] Exhausted {MAX_RETRIES} attempts — "
+        f"keeping best attempt {best_result['attempt']} "
+        f"(score={best_result['verification']['score']})"
+    )
+    return best_result
 
 
 if __name__ == "__main__":
-    # Standalone smoke test for the full extract → verify → retry loop.
-    # Usage:
+    # Standalone smoke test for the extract-then-verify pair. Usage:
     #   python -m app.services.verification "tests/input/Quiz/<some file>.docx"
     import asyncio
     import json
@@ -191,8 +149,8 @@ if __name__ == "__main__":
     from app.services.converter import extract_document
 
     # Without this, only WARNING+ messages print (Python's default last-resort
-    # handler) — the per-attempt INFO logs from extractor.py/verification.py
-    # (each attempt's question count and score) are silently dropped.
+    # handler) — the INFO logs from extractor.py/verification.py (question
+    # count, verification score) are silently dropped.
     _logging.basicConfig(level=_logging.INFO, format="%(message)s")
 
     path = sys.argv[1] if len(sys.argv) > 1 else "tests/input/Quiz/SITHCCC029_Knowledge_Test_ShortAnswer.docx"
@@ -201,7 +159,7 @@ if __name__ == "__main__":
     doc_text, _ = extract_document(file_bytes, path)
 
     async def _run():
-        result = await check_with_retry(doc_text, path)
+        result = await extract_and_verify(doc_text, path)
         questions = result["normalised_a"].get("questions", [])
         print(f"\nAttempt {result.get('attempt')} — {len(questions)} questions")
         print(json.dumps(result["verification"], indent=2))

@@ -57,7 +57,7 @@ logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(messa
 
 from app.services import extractor as extractor_module
 from app.services.classifier import classify_document_type
-from app.services.verification import check_with_retry
+from app.services.verification import extract_and_verify
 from app.services.converter import extract_document, parse_points_per_question
 from app.services.grounding import check_question_grounding
 from app.schemas.question import validate_questions
@@ -90,7 +90,7 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
     text, instructions = extract_document(file_bytes, filename)
     file_type = classify_document_type(filename)
 
-    result = await check_with_retry(text, filename)
+    result = await extract_and_verify(text, filename)
 
     verification = result.get("verification", {})
     questions = result["normalised_a"].get("questions", [])

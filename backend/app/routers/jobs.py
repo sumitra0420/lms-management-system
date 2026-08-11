@@ -11,7 +11,7 @@ from app.db import get_db, SessionLocal
 from app.models.job import ExtractedData, UploadJob
 from app.services.canvas import create_quiz, sync_question, _base_url as canvas_base_url
 from app.services.classifier import classify_document_type
-from app.services.verification import check_with_retry
+from app.services.verification import extract_and_verify
 from app.services.converter import extract_document, parse_points_per_question
 from app.services.storage import download_file, generate_presigned_url
 from app.services.grounding import check_question_grounding
@@ -243,7 +243,7 @@ def _process_job(job_id: str, s3_key: str, filename: str):
         file_type              = classify_document_type(filename)
 
         with _extraction_lock:
-            result = asyncio.run(check_with_retry(text, filename))
+            result = asyncio.run(extract_and_verify(text, filename))
 
         verification = result.get("verification", {})
         questions    = result["normalised_a"].get("questions", [])
