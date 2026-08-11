@@ -27,7 +27,7 @@ export class Uploads implements OnInit {
 
   pipelineSteps: PipelineStep[] = [
     { label: 'Pre-processing',  status: 'completed'  },
-    { label: 'Dual Extraction', status: 'processing' },
+    { label: 'Extraction & Verification', status: 'processing' },
     { label: 'Validation',      status: 'pending'    },
     { label: 'Upload',          status: 'pending'    },
   ];
@@ -71,7 +71,7 @@ export class Uploads implements OnInit {
       if (this.allDone) {
         this.pipelineSteps = [
           { label: 'Pre-processing',  status: 'completed' },
-          { label: 'Dual Extraction', status: 'completed' },
+          { label: 'Extraction & Verification', status: 'completed' },
           { label: 'Validation',      status: 'completed' },
           { label: 'Upload',          status: 'pending'   },
         ];
@@ -105,6 +105,7 @@ export class Uploads implements OnInit {
       ).subscribe({
         next: (status: JobStatus) => {
           const cs = canonicalStatus(status.status, status.flag_count);
+          console.log(`[Upload] ${file.name}: ${cs}`);
           this.uploadState.updateFileState(i, {
             status:       cs,
             errorMessage: cs === 'error' ? (status.error_message ?? undefined) : undefined,
@@ -126,7 +127,7 @@ export class Uploads implements OnInit {
     if (!this.allDone) return;
     this.pipelineSteps = [
       { label: 'Pre-processing',  status: 'completed' },
-      { label: 'Dual Extraction', status: 'completed' },
+      { label: 'Extraction & Verification', status: 'completed' },
       { label: 'Validation',      status: 'completed' },
       { label: 'Upload',          status: 'pending'   },
     ];
