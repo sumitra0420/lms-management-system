@@ -214,7 +214,7 @@ def _normalise(raw_json: str, source: str, filename: str = "") -> dict:
 # OpenAI-compatible models (openai.*) — uses /v1/responses via httpx
 # ---------------------------------------------------------------------------
 
-async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str, system_prompt: str) -> str:
+async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str, system_prompt: str, filename: str = "") -> str:
     url = f"{base_url.rstrip('/')}/responses"
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -233,6 +233,13 @@ async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str,
 
     data = r.json()
 
+    usage = data.get("usage") or {}
+    if usage:
+        logger.info(
+            f"[Tokens] [{filename}] {model_id} → input={usage.get('input_tokens')} "
+            f"output={usage.get('output_tokens')} total={usage.get('total_tokens')}"
+        )
+
     for item in data.get("output", []):
         for content in item.get("content", []):
             if content.get("type") in ("output_text", "text"):
@@ -249,7 +256,7 @@ async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str,
 # Anthropic Claude models (anthropic.*) — uses AnthropicBedrockMantle
 # ---------------------------------------------------------------------------
 
-async def _extract_bedrock_iam(text: str, region: str, model_id: str, system_prompt: str) -> str:
+async def _extract_bedrock_iam(text: str, region: str, model_id: str, system_prompt: str, filename: str = "") -> str:
     # Converse API works for ALL Bedrock models (Claude, OpenAI, etc.)
     # boto3 reads AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from environment
     def _invoke():
@@ -260,6 +267,15 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str, system_pro
             messages=[{"role": "user", "content": [{"text": text}]}],
             inferenceConfig={"maxTokens": 8192},
         )
+        # Converse API standardizes usage reporting across every Bedrock
+        # provider (Claude, Nova, Llama, ...) — same shape regardless of
+        # which model actually ran, so this works for both Model A and B.
+        usage = response.get("usage") or {}
+        if usage:
+            logger.info(
+                f"[Tokens] [{filename}] {model_id} → input={usage.get('inputTokens')} "
+                f"output={usage.get('outputTokens')} total={usage.get('totalTokens')}"
+            )
         return response["output"]["message"]["content"][0]["text"]
 
     loop = asyncio.get_event_loop()
@@ -270,7 +286,7 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str, system_pro
 # Dispatcher — picks the right client based on model ID prefix
 # ---------------------------------------------------------------------------
 
-async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str, region_env: str, system_prompt: str = SYSTEM_PROMPT) -> str:
+async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str, region_env: str, system_prompt: str = SYSTEM_PROMPT, filename: str = "") -> str:
     api_key  = os.getenv(api_key_env, "")
     base_url = os.getenv(base_url_env, "")
     model_id = os.getenv(model_id_env, "")
@@ -283,10 +299,10 @@ async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_i
 
     if base_url:
         # bedrock-mantle Quickstart bearer token via httpx
-        return await _extract_openai(text, api_key, base_url, model_id, system_prompt)
+        return await _extract_openai(text, api_key, base_url, model_id, system_prompt, filename)
     else:
         # IAM-based via Converse API — works for Claude, OpenAI, and any Bedrock model
-        return await _extract_bedrock_iam(text, region, model_id, system_prompt)
+        return await _extract_bedrock_iam(text, region, model_id, system_prompt, filename)
 
 
 # ---------------------------------------------------------------------------
@@ -303,8 +319,8 @@ async def extract(text: str, filename: str = "") -> dict:
     logger.info(f"[Extractor] [{filename}] Starting dual extraction | Model A: {model_a_id} | Model B: {model_b_id}")
 
     raw_a, raw_b = await asyncio.gather(
-        _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION"),
-        _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION"),
+        _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION", filename=filename),
+        _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION", filename=filename),
     )
 
     norm_a = _normalise(raw_a, "model_a", filename)
@@ -332,7 +348,7 @@ async def extract_a_only(text: str, filename: str = "") -> dict:
     model_a_id = os.getenv("MODEL_A_ID", "")
     logger.info(f"[Extractor] [{filename}] Starting Model A extraction | Model A: {model_a_id}")
 
-    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION")
+    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION", filename=filename)
     norm_a = _normalise(raw_a, "model_a", filename)
 
     logger.info(f"[Extractor] [{filename}] Model A → {len(norm_a.get('questions', []))} questions | error: {norm_a.get('error')}")
@@ -436,7 +452,7 @@ async def verify_extraction(text: str, candidate_json: dict, filename: str = "")
 
     raw = await _extract_model(
         verify_input, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION",
-        system_prompt=VERIFY_SYSTEM_PROMPT,
+        system_prompt=VERIFY_SYSTEM_PROMPT, filename=filename,
     )
     result = _normalise_verification(raw)
 
