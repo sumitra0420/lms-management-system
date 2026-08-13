@@ -17,8 +17,13 @@ reflected):
 
 Takes 2 or more run subfolders — not just a pair.
 
+Add --out <filename> anywhere in the arguments to write to a different
+filename instead of the default comparison.png, so a new comparison
+doesn't overwrite one you already have:
+    python tests/plot_flag_results.py integration/result_oldprompt integration/result_newprompt --out comparison_verify_flow.png
+
 Reads:  tests/output/test_results/flag_review/<run>/auto_review.csv
-Writes: tests/output/test_results/flag_review/comparison.png
+Writes: tests/output/test_results/flag_review/<--out filename, default comparison.png>
 """
 
 import csv
@@ -96,7 +101,7 @@ def _print_summary(label: str, counts: dict):
     print(f"  precision={m['precision']:.3f}  recall={m['recall']:.3f}  accuracy={m['accuracy']:.3f}")
 
 
-def _plot(runs: list[str], all_counts: list[dict]):
+def _plot(runs: list[str], all_counts: list[dict], out_filename: str = "comparison.png"):
     if len(runs) > len(RUN_COLORS):
         print(f"WARNING: {len(runs)} runs but only {len(RUN_COLORS)} palette slots defined — "
               f"add more to RUN_COLORS or this will error.")
@@ -146,24 +151,31 @@ def _plot(runs: list[str], all_counts: list[dict]):
         ncol=min(len(runs), 3), labelcolor="#0b0b0b", fontsize=8,
     )
 
-    out_path = os.path.join(FLAG_REVIEW_DIR, "comparison.png")
+    out_path = os.path.join(FLAG_REVIEW_DIR, out_filename)
     fig.tight_layout()
     fig.savefig(out_path, facecolor=fig.get_facecolor(), bbox_inches="tight")
     print(f"\nChart written to {out_path}")
 
 
-def main(runs: list[str]):
+def main(runs: list[str], out_filename: str = "comparison.png"):
     all_counts = [_tally(run) for run in runs]
 
     for run, counts in zip(runs, all_counts):
         _print_summary(run, counts)
 
-    _plot(runs, all_counts)
+    _plot(runs, all_counts, out_filename)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python tests/plot_flag_results.py <run-1> <run-2> [run-3 ...]")
-        print("e.g.:  python tests/plot_flag_results.py integration/result_oldprompt integration/result_newprompt integration/result_newprompt_check")
+    args = sys.argv[1:]
+    out_filename = "comparison.png"
+    if "--out" in args:
+        i = args.index("--out")
+        out_filename = args[i + 1]
+        args = args[:i] + args[i + 2:]
+
+    if len(args) < 2:
+        print("Usage: python tests/plot_flag_results.py <run-1> <run-2> [run-3 ...] [--out filename.png]")
+        print("e.g.:  python tests/plot_flag_results.py integration/result_oldprompt integration/result_newprompt integration/result_newprompt_check --out comparison_verify_flow.png")
         sys.exit(1)
-    main(sys.argv[1:])
+    main(args, out_filename)

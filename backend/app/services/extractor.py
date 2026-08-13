@@ -233,6 +233,13 @@ async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str)
 
     data = r.json()
 
+    usage = data.get("usage") or {}
+    if usage:
+        logger.info(
+            f"[Tokens] {model_id} → input={usage.get('input_tokens')} "
+            f"output={usage.get('output_tokens')} total={usage.get('total_tokens')}"
+        )
+
     for item in data.get("output", []):
         for content in item.get("content", []):
             if content.get("type") in ("output_text", "text"):
@@ -260,6 +267,12 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str) -> str:
             messages=[{"role": "user", "content": [{"text": text}]}],
             inferenceConfig={"maxTokens": 8192},
         )
+        usage = response.get("usage") or {}
+        if usage:
+            logger.info(
+                f"[Tokens] {model_id} → input={usage.get('inputTokens')} "
+                f"output={usage.get('outputTokens')} total={usage.get('totalTokens')}"
+            )
         return response["output"]["message"]["content"][0]["text"]
 
     loop = asyncio.get_event_loop()

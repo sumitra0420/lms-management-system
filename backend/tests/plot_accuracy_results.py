@@ -16,7 +16,12 @@ Reads:
     count_validation: tests/output/test_results/count_validation/<run>/_summary.json  (field_agreement: {field: {matched, total}})
     field_accuracy:    tests/output/test_results/field_accuracy/<run>/_summary.json     (fields: {field: {correct, total}})
 
-Writes: tests/output/test_results/<metric>/comparison.png
+Add --out <filename> anywhere in the arguments to write to a different
+filename instead of the default comparison.png, so a new comparison
+doesn't overwrite one you already have:
+    python tests/plot_accuracy_results.py field_accuracy integration/result_1 integration/result_2 --out comparison_verify_flow.png
+
+Writes: tests/output/test_results/<metric>/<--out filename, default comparison.png>
 """
 
 import json
@@ -82,7 +87,7 @@ def _accuracy(field_data: dict, numerator_key: str) -> float:
     return field_data.get(numerator_key, 0) / total
 
 
-def _plot(metric: str, runs: list, all_data: list):
+def _plot(metric: str, runs: list, all_data: list, out_filename: str = "comparison.png"):
     cfg = METRIC_CONFIG[metric]
     fields = [f for f in cfg["field_order"] if any(f in d for d in all_data)]
     labels = [cfg["field_labels"].get(f, f) for f in fields]
@@ -161,13 +166,13 @@ def _plot(metric: str, runs: list, all_data: list):
     )
 
     out_dir = os.path.join(BASE_DIR, cfg["summary_subdir"])
-    out_path = os.path.join(out_dir, "comparison.png")
+    out_path = os.path.join(out_dir, out_filename)
     fig.tight_layout()
     fig.savefig(out_path, facecolor=fig.get_facecolor(), bbox_inches="tight")
     print(f"\nChart written to {out_path}")
 
 
-def main(metric: str, runs: list):
+def main(metric: str, runs: list, out_filename: str = "comparison.png"):
     if metric not in METRIC_CONFIG:
         print(f"Unknown metric {metric!r} — expected one of {list(METRIC_CONFIG)}")
         sys.exit(1)
@@ -185,12 +190,19 @@ def main(metric: str, runs: list):
             total = data[field].get("total", 0)
             print(f"  {cfg['field_labels'].get(field, field):<16} {acc:.1%}  ({num}/{total})")
 
-    _plot(metric, runs, all_data)
+    _plot(metric, runs, all_data, out_filename)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print("Usage: python tests/plot_accuracy_results.py <count_validation|field_accuracy> <run-1> <run-2> [run-3 ...]")
-        print("e.g.:  python tests/plot_accuracy_results.py field_accuracy integration/result_1 integration/result_2 integration/result_3")
+    args = sys.argv[1:]
+    out_filename = "comparison.png"
+    if "--out" in args:
+        i = args.index("--out")
+        out_filename = args[i + 1]
+        args = args[:i] + args[i + 2:]
+
+    if len(args) < 3:
+        print("Usage: python tests/plot_accuracy_results.py <count_validation|field_accuracy> <run-1> <run-2> [run-3 ...] [--out filename.png]")
+        print("e.g.:  python tests/plot_accuracy_results.py field_accuracy integration/result_1 integration/result_2 integration/result_3 --out comparison_verify_flow.png")
         sys.exit(1)
-    main(sys.argv[1], sys.argv[2:])
+    main(args[0], args[1:], out_filename)

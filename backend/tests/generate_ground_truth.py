@@ -17,6 +17,11 @@ Run from inside backend/:
 
 Or point at a custom folder:
     python tests/generate_ground_truth.py /path/to/docx/folder
+
+Or write to a different output subfolder instead of the default
+"groundtruth" (e.g. to regenerate into a fresh folder for comparison,
+without overwriting the existing hand-reviewed set):
+    python tests/generate_ground_truth.py tests/input/Quiz groundtruth_v2
 """
 
 import asyncio
@@ -32,7 +37,8 @@ from app.services.converter import extract_document, parse_points_per_question
 from app.services.extractor import _extract_model, _normalise
 
 DEFAULT_DOCX_DIR = os.path.join(os.path.dirname(__file__), "input", "Quiz")
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output", "test_results", "groundtruth")
+DEFAULT_OUTPUT_SUBDIR = "groundtruth"
+RESULTS_ROOT = os.path.join(os.path.dirname(__file__), "output", "test_results")
 
 
 def _simplify_mcq(q: dict) -> dict:
@@ -101,7 +107,8 @@ async def _run_one(filename: str, file_bytes: bytes) -> dict:
     return record
 
 
-async def main(docx_dir: str):
+async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR):
+    OUTPUT_DIR = os.path.join(RESULTS_ROOT, output_subdir)
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
     docx_files = sorted(
@@ -181,5 +188,6 @@ async def main(docx_dir: str):
 
 
 if __name__ == "__main__":
-    docx_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DOCX_DIR
-    asyncio.run(main(os.path.abspath(docx_dir)))
+    docx_dir      = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DOCX_DIR
+    output_subdir = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_OUTPUT_SUBDIR
+    asyncio.run(main(os.path.abspath(docx_dir), output_subdir))
