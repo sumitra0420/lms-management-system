@@ -394,6 +394,18 @@ CHOICES COMPLETENESS (multiple_choice only):
 NO HALLUCINATION:
   Every field's content must actually appear in the source text — nothing invented or corrected.
 
+TYPOGRAPHIC VARIATIONS ARE NOT ERRORS:
+  Never report a mismatch for differences that are purely typographic, not content:
+    - Dash style: hyphen (-), en dash (–), and em dash (—) are interchangeable — one appearing
+      where another was used is NOT an issue.
+    - Quote/apostrophe style: straight quotes (' ") vs curly/smart quotes (' ' " ") are
+      interchangeable.
+    - Minor whitespace differences around punctuation.
+  Only report a genuine wording, content, or meaning difference — never a punctuation-glyph
+  difference a human reader would consider identical. This does NOT apply to genuine content
+  typos/inconsistencies in the source (e.g. "Do no rush" for "Do not rush") — those are still
+  worth flagging, since they reveal a real problem in the source document itself.
+
 ━━━ OUTPUT FORMAT ━━━
 Return ONLY this JSON with no explanation outside it:
 {
