@@ -7,6 +7,7 @@ import boto3
 import httpx
 from botocore.config import Config
 from dotenv import load_dotenv
+import anthropic
 
 load_dotenv()
 
@@ -251,6 +252,30 @@ async def _extract_openai(text: str, api_key: str, base_url: str, model_id: str,
 
     raise RuntimeError(f"No text found in response from {model_id}: {json.dumps(data)[:300]}")
 
+# ---------------------------------------------------------------------------
+# Direct Anthropic API (api.anthropic.com) — for stakeholders with their own
+# Claude API key instead of Bedrock access
+# ---------------------------------------------------------------------------
+
+async def _extract_anthropic_direct(text: str, api_key: str, model_id: str, system_prompt: str, filename: str = "") -> str:
+    client = anthropic.AsyncAnthropic(api_key=api_key)
+    response = await client.messages.create(
+        model=model_id,
+        max_tokens=8192,
+        system=system_prompt,
+        messages=[{"role": "user", "content": text}],
+    )
+
+    usage = response.usage
+    if usage:
+        logger.info(
+            f"[Tokens] [{filename}] {model_id} → input={usage.input_tokens} "
+            f"output={usage.output_tokens} total={usage.input_tokens + usage.output_tokens}"
+        )
+
+    return response.content[0].text
+
+
 
 # ---------------------------------------------------------------------------
 # Anthropic Claude models (anthropic.*) — uses AnthropicBedrockMantle
@@ -286,10 +311,15 @@ async def _extract_bedrock_iam(text: str, region: str, model_id: str, system_pro
 # Dispatcher — picks the right client based on model ID prefix
 # ---------------------------------------------------------------------------
 
-async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_id_env: str, region_env: str, system_prompt: str = SYSTEM_PROMPT, filename: str = "") -> str:
+async def _extract_model(text: str, api_key_env: str, base_url_env: str, 
+                         model_id_env: str, region_env: str, 
+                         provider_env: str,
+                         system_prompt: str = SYSTEM_PROMPT, 
+                         filename: str = "") -> str:
     api_key  = os.getenv(api_key_env, "")
     base_url = os.getenv(base_url_env, "")
     model_id = os.getenv(model_id_env, "")
+    provider = os.getenv(provider_env, "bedrock")
     # Per-model region override — some Bedrock cross-region inference
     # profiles (e.g. Llama's "us." profiles) only resolve when the client
     # is pointed at a region within that profile's group, not the account's
@@ -297,12 +327,14 @@ async def _extract_model(text: str, api_key_env: str, base_url_env: str, model_i
     # is set, so existing single-region setups are unaffected.
     region   = os.getenv(region_env) or os.getenv("AWS_REGION", "ap-southeast-2")
 
-    if base_url:
-        # bedrock-mantle Quickstart bearer token via httpx
-        return await _extract_openai(text, api_key, base_url, model_id, system_prompt, filename)
-    else:
-        # IAM-based via Converse API — works for Claude, OpenAI, and any Bedrock model
+    if provider == "anthropic":
+        return await _extract_anthropic_direct(text, api_key, model_id, system_prompt, filename)
+    elif provider == "openai":
+        return await _extract_openai(text, api_key, base_url or "https://api.openai.com/v1", model_id, system_prompt, filename)
+    elif provider == "bedrock":
         return await _extract_bedrock_iam(text, region, model_id, system_prompt, filename)
+    else:
+        raise RuntimeError(f"Unknown provider {provider!r} for {model_id_env} — expected anthropic/openai/bedrock")
 
 
 # ---------------------------------------------------------------------------
@@ -319,8 +351,8 @@ async def extract(text: str, filename: str = "") -> dict:
     logger.info(f"[Extractor] [{filename}] Starting dual extraction | Model A: {model_a_id} | Model B: {model_b_id}")
 
     raw_a, raw_b = await asyncio.gather(
-        _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION", filename=filename),
-        _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION", filename=filename),
+        _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION","MODEL_A_PROVIDER", filename=filename),
+        _extract_model(text, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION", "MODEL_B_PROVIDER", filename=filename),
     )
 
     norm_a = _normalise(raw_a, "model_a", filename)
@@ -348,7 +380,7 @@ async def extract_a_only(text: str, filename: str = "") -> dict:
     model_a_id = os.getenv("MODEL_A_ID", "")
     logger.info(f"[Extractor] [{filename}] Starting Model A extraction | Model A: {model_a_id}")
 
-    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION", filename=filename)
+    raw_a = await _extract_model(text, "MODEL_A_API_KEY", "MODEL_A_BASE_URL", "MODEL_A_ID", "MODEL_A_REGION", "MODEL_A_PROVIDER", filename=filename)
     norm_a = _normalise(raw_a, "model_a", filename)
 
     logger.info(f"[Extractor] [{filename}] Model A → {len(norm_a.get('questions', []))} questions | error: {norm_a.get('error')}")
@@ -463,7 +495,7 @@ async def verify_extraction(text: str, candidate_json: dict, filename: str = "")
     )
 
     raw = await _extract_model(
-        verify_input, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION",
+        verify_input, "MODEL_B_API_KEY", "MODEL_B_BASE_URL", "MODEL_B_ID", "MODEL_B_REGION","MODEL_B_PROVIDER",
         system_prompt=VERIFY_SYSTEM_PROMPT, filename=filename,
     )
     result = _normalise_verification(raw)
