@@ -8,15 +8,17 @@ load_dotenv()
 
 def _s3():
     region = os.getenv("AWS_REGION", "ap-southeast-2")
+    endpoint_url = os.getenv("S3_ENDPOINT_URL") or None
     return boto3.client(
         "s3",
         region_name=region,
+        endpoint_url=endpoint_url,
         config=Config(
             signature_version="s3v4",
-            s3={"addressing_style": "virtual"},
+             s3={"addressing_style": "path" if endpoint_url else "virtual"},
         ),
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+        aws_access_key_id=os.getenv("S3_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("S3_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"),
     )
 
 
