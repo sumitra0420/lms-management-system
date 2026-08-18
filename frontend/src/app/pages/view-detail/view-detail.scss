@@ -10,7 +10,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 14px 28px 10px;
+  padding: 14px 16px 10px;
   background: #fff;
   border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
@@ -93,7 +93,7 @@
 }
 
 .sync-progress {
-  margin: 0 28px 12px;
+  margin: 0 16px 12px;
   height: 4px;
   border-radius: 2px;
   background: #e2e8f0;
@@ -115,7 +115,7 @@
 }
 
 .sync-banner {
-  margin: 0 28px 12px;
+  margin: 0 16px 12px;
   white-space: normal;
   flex-shrink: 0;
 
@@ -129,8 +129,8 @@
 /* Body */
 .detail-body {
   display: flex;
-  gap: 20px;
-  padding: 16px 28px;
+  gap: 8px;
+  padding: 16px 16px 8px;
   flex: 1;
   overflow: hidden;
 }
@@ -141,7 +141,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -532,7 +532,7 @@
 
 /* Metadata panel */
 .metadata-panel {
-  width: 250px;
+  width: 220px;
   flex-shrink: 0;
   overflow-y: auto;
 }
@@ -702,7 +702,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 28px;
+  padding: 8px 16px;
   background: #fff;
   border-top: 1px solid #e2e8f0;
   flex-shrink: 0;
