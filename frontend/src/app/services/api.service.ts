@@ -1,6 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, from } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 export interface VerificationIssue {
   field: string;
@@ -131,7 +132,7 @@ export const CANONICAL_STATUS_LABEL: Record<CanonicalStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
-  private baseUrl = 'https://lms-management-system-wo50.onrender.com/api';
+  private baseUrl = environment.apiUrl;
 
   presign(filename: string): Observable<PresignResponse> {
     return this.http.post<PresignResponse>(`${this.baseUrl}/jobs/presign`, { filename });
