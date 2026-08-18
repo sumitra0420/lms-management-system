@@ -131,7 +131,7 @@ export const CANONICAL_STATUS_LABEL: Record<CanonicalStatus, string> = {
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   private http = inject(HttpClient);
-  private baseUrl = 'http://localhost:8000/api';
+  private baseUrl = 'https://lms-management-system-wo50.onrender.com/api';
 
   presign(filename: string): Observable<PresignResponse> {
     return this.http.post<PresignResponse>(`${this.baseUrl}/jobs/presign`, { filename });
