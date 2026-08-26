@@ -29,6 +29,9 @@ Extract every learner-facing question and return STRICT valid JSON only.
 - LEARNER-FACING ONLY: Extract questions students must answer. Ignore cover pages, global instructions,
   policies, assessor signatures, date fields, result boxes, and feedback sections.
 - EXACT SCHEMA: Output must match the JSON structure below exactly. No extra fields, no markdown fences.
+- QUESTION BOUNDARIES: A "[QUESTION START]" line, when present, marks the exact point a new question
+  begins — everything between one "[QUESTION START]" and the next belongs to that one question only.
+  Not every document has these markers; when absent, use your own judgement as before.
 
 ━━━ SPECIAL LABEL RULES ━━━
 
@@ -50,13 +53,20 @@ ANSWER GUIDANCE:
   A marking instruction that describes how many answers are needed and whether the list is flexible
   ("Answer may address, but is not limited to…") or strict ("Answer must address:").
   Store this line verbatim in the feedback field.
-  Do NOT include it in correct_answer. Do NOT include it in question text.
+  Do NOT include it in correct_answer, even reworded or split into bullets — correct_answer holds
+  ONLY ASSESSOR KEY content. Do NOT include it in question text.
 
 OPTION:
   Marks a selectable multiple-choice option that is NOT the correct answer (an incorrect
   distractor). Combined with any ASSESSOR KEY lines for the same question, OPTION lines make up
   the complete choices[] list — OPTION lines are incorrect options, ASSESSOR KEY lines are correct
   options. Never drop OPTION lines and never fold them into correct_answer.
+
+TABLE_DATA:
+  A line prefixed "TABLE_DATA:" is followed by a JSON object {"rows": [{"cells": [...]}, ...]} — the
+  raw grid of a table that appeared in the source immediately after a question (e.g. a legislation /
+  objective / regulator reference grid, or a term / definition table). When a question is followed
+  by a TABLE_DATA block before the next question, it is a table question — see the "table" type below.
 
 ━━━ QUESTION TYPE RULES ━━━
 
@@ -97,6 +107,19 @@ true_false:
   Question answered with True or False.
   Set choices to [{"text":"True","correct":<bool>},{"text":"False","correct":<bool>}].
 
+table:
+  Question followed by a TABLE_DATA block (see above) instead of, or in addition to, ASSESSOR KEY
+  lines. Set choices to [] and correct_answer to "" — the table field holds this question's answer
+  content instead.
+  Decide whether the grid's FIRST row is a column-header row (short label text describing what each
+  column holds, e.g. "Legislation | Main objective | Body") or an ordinary data row (e.g. every row
+  pairs a term with its definition, with no row describing the columns themselves).
+  Populate "table": {"has_header": <bool>, "headers": [...], "rows": [{"cells": [...]}, ...]}.
+    - If has_header is true: "headers" = the first row's cells; "rows" = every OTHER row.
+    - If has_header is false: "headers" = []; "rows" = every row from TABLE_DATA, unchanged.
+  Use the exact cell text from TABLE_DATA verbatim — never rephrase, summarise, reorder, or drop
+  a cell.
+
 ━━━ POINTS RULES ━━━
 - Use the explicit mark/point value stated near the question (e.g. "3 marks" → points: 3).
 - If no value is stated anywhere near the question, set points to null. Do NOT invent
@@ -115,6 +138,22 @@ Return ONLY this JSON structure with no explanation outside the JSON:
       "correct_answer": "answer one | answer two | answer three",
       "points": 1,
       "feedback": "Answer may address, but is not limited to, three of the following"
+    },
+    {
+      "id": "Q16",
+      "type": "table",
+      "text": "Define the following terms or acronyms...",
+      "choices": [],
+      "correct_answer": "",
+      "points": 1,
+      "feedback": "",
+      "table": {
+        "has_header": false,
+        "headers": [],
+        "rows": [
+          {"cells": ["Activities of daily living (ADLs)", "ADLs are the routine tasks necessary to manage basic needs like walking, eating, dressing, personal hygiene and toileting"]}
+        ]
+      }
     }
   ]
 }"""
@@ -198,14 +237,29 @@ def _normalise(raw_json: str, source: str, filename: str = "") -> dict:
                 "correct": bool(c.get("correct") or False),
             })
         raw_points = q.get("points")
+        q_type = str(q.get("type") or "short_answer")
+
+        table = None
+        if q_type == "table":
+            raw_table = q.get("table") or {}
+            table = {
+                "has_header": bool(raw_table.get("has_header") or False),
+                "headers":    [str(h) for h in (raw_table.get("headers") or [])],
+                "rows": [
+                    {"cells": [str(c) for c in (row.get("cells") or [])]}
+                    for row in (raw_table.get("rows") or [])
+                ],
+            }
+
         normalised_questions.append({
             "id":             str(q.get("id") or ""),
-            "type":           str(q.get("type") or "short_answer"),
+            "type":           q_type,
             "text":           str(q.get("text") or ""),
             "choices":        choices,
             "correct_answer": str(q.get("correct_answer") or ""),
             "points":         float(raw_points) if raw_points is not None else None,
             "feedback":       str(q.get("feedback") or ""),
+            "table":          table,
         })
 
     return {"questions": normalised_questions}

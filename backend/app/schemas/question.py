@@ -2,12 +2,22 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-QuestionType = Literal["multiple_choice", "short_answer", "true_false"]
+QuestionType = Literal["multiple_choice", "short_answer", "true_false", "table"]
 
 
 class Choice(BaseModel):
     text: str
     correct: bool = False
+
+
+class TableRow(BaseModel):
+    cells: list[str] = []
+
+
+class TableData(BaseModel):
+    has_header: bool = False
+    headers: list[str] = []
+    rows: list[TableRow] = []
 
 
 class Question(BaseModel):
@@ -18,6 +28,7 @@ class Question(BaseModel):
     correct_answer: str = ""
     points: float | None = Field(default=None, ge=0)
     feedback: str = ""
+    table: TableData | None = None
 
     @field_validator("id", "text")
     @classmethod

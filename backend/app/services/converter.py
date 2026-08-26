@@ -50,6 +50,7 @@ from docx import Document
 from docx.text.paragraph import Paragraph
 from docx.table import Table
 from docx.opc.exceptions import PackageNotFoundError
+import json
 import re
 import tempfile
 import os
@@ -60,16 +61,70 @@ import zipfile
 # Shared colour helpers
 # ===========================================================================
 
+def _is_red_rgb(rgb) -> bool:
+    """Threshold used to classify an RGBColor as the answer-marking red: R≥200, G≤80, B≤80."""
+    if rgb is None:
+        return False
+    return rgb[0] >= 200 and rgb[1] <= 80 and rgb[2] <= 80
+
+
 def _is_red_run(run) -> bool:
     """
     Return True when a text run uses the red font colour used in Template A
     to mark correct answers.  Threshold: R≥200, G≤80, B≤80.
     """
     try:
-        rgb = run.font.color.rgb
-        if rgb is None:
-            return False
-        return rgb[0] >= 200 and rgb[1] <= 80 and rgb[2] <= 80
+        return _is_red_rgb(run.font.color.rgb)
+    except Exception:
+        return False
+
+
+def _paragraph_style_is_red(para: Paragraph) -> bool:
+    """
+    Return True when the paragraph's own runs carry no direct colour, but
+    the paragraph's NAMED STYLE defines red font colour instead (e.g. a
+    custom "Answers" style with <w:color w:val="FF0000"/> in its style
+    definition, applied via pStyle rather than per-run formatting).
+
+    Some source documents are authored this way — a style is defined once
+    and applied to every answer paragraph, instead of manually colouring
+    each run red — so every run in the paragraph is colourless on its own
+    and the red only exists in styles.xml. A run-only check (_is_red_run)
+    misses every answer in a document built this way. Walks the style's
+    base-style chain since a style may inherit its colour from a parent
+    style rather than setting it directly, so this generalises to any
+    future template that colours answers via a style, whatever that
+    style happens to be named.
+    """
+    style = para.style
+    while style is not None:
+        try:
+            rgb = style.font.color.rgb
+        except Exception:
+            rgb = None
+        if rgb is not None:
+            return _is_red_rgb(rgb)
+        style = getattr(style, "base_style", None)
+    return False
+
+
+def _run_color_overridden(run) -> bool:
+    """
+    True when a run declares its own colour directly — including an
+    explicit non-colour value like <w:color w:val="auto"/> — rather than
+    silently inheriting whatever colour its paragraph style defines.
+
+    "auto" has no RGB value (color.rgb is None, same as a run with no
+    colour element at all), but color.type is AUTO instead of None, which
+    is the only way to tell "this run opted out of the style's colour on
+    purpose" apart from "this run never mentioned colour, so the style's
+    colour applies." Needed because a document can mix the two within the
+    same style: e.g. a reference-table header row using the same "Answers"
+    style as the real red answers, but with each header run explicitly set
+    to "auto" to render black instead of inheriting the style's red.
+    """
+    try:
+        return run.font.color.type is not None
     except Exception:
         return False
 
@@ -78,6 +133,16 @@ def _para_red_info(para: Paragraph) -> tuple[str, bool]:
     """Return (stripped text, has_any_red_run) for a paragraph."""
     text = "".join(run.text for run in para.runs).strip()
     any_red = any(_is_red_run(r) and r.text.strip() for r in para.runs)
+    if not any_red and text:
+        # Only fall back to the paragraph's style colour when none of its
+        # runs explicitly override colour themselves (red or otherwise) —
+        # otherwise a paragraph that opts OUT of the style's red via an
+        # explicit "auto" run colour (see _run_color_overridden) would be
+        # wrongly treated as red just because it happens to share a style
+        # with real answer paragraphs.
+        no_overrides = not any(_run_color_overridden(r) for r in para.runs if r.text.strip())
+        if no_overrides:
+            any_red = _paragraph_style_is_red(para)
     return text, any_red
 
 
@@ -251,6 +316,99 @@ def _unique_row_cells(row):
         yield cell
 
 
+def _cell_plain_text(cell) -> str:
+    """
+    Resolve a cell's full text content as one plain string, recursing into
+    a table nested inside the cell (rare double-nesting) by flattening it
+    inline. Used only for the structured table representation handed to
+    the AI extractor (see _table_to_dict) — unlike the paragraph-answer
+    path, table cell content carries no ASSESSOR KEY / colour labelling
+    here. The table is captured verbatim; deciding what's a header and
+    what's the accepted answer is left entirely to the AI extractor.
+    """
+    parts: list[str] = []
+    for block in cell.iter_inner_content():
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if text:
+                parts.append(text)
+        elif isinstance(block, Table):
+            for row in block.rows:
+                for sub_cell in _unique_row_cells(row):
+                    sub_text = _cell_plain_text(sub_cell)
+                    if sub_text:
+                        parts.append(sub_text)
+    return " ".join(parts)
+
+
+def _table_to_dict(table) -> dict:
+    """
+    Render a table as a structured {"rows": [{"cells": [...]}]} dict
+    instead of flattening it into inline text — preserves the table's
+    exact row/column shape so the AI extractor receives the real
+    structure rather than reconstructing it from a flattened stream.
+    Deliberately does not try to detect or skip a header row here — that
+    judgement, like which cell(s) hold the accepted answer, is left to the
+    AI extractor, which has full context (question wording) this parsing
+    layer doesn't.
+    """
+    rows: list[dict] = []
+    for row in table.rows:
+        cells = list(_unique_row_cells(row))
+        if not cells:
+            continue
+        rows.append({"cells": [_cell_plain_text(c) for c in cells]})
+    return {"rows": rows}
+
+
+def _walk_cell(cell, process_para, push_table, on_new_question=None) -> None:
+    """
+    Walk a table cell's direct content in document order.
+
+    cell.paragraphs never surfaces a table nested inside the cell (python-
+    docx quirk, same family as the merged-cell repeat handled above), so
+    without this a table-inside-a-cell — a reference grid (legislation /
+    objective / regulator columns), a matching-question answer table, or a
+    single-cell bordered answer box — is silently dropped from extraction.
+
+    Plain paragraphs go through process_para exactly as before (unchanged
+    colour / lettered-option labelling). A nested table is handled by shape:
+      - 1 row x 1 column (just a bordered box wrapping free-response text,
+        e.g. a plain answer box under a short-answer question) — no
+        row/column structure to preserve, so its paragraph(s) are walked
+        directly through process_para like any other cell text.
+      - anything larger — captured as ONE structured table item via
+        push_table(_table_to_dict(...)), keeping the whole grid intact for
+        the AI extractor instead of flattening it into loose lines.
+
+    on_new_question(), if given, is called right before process_para for a
+    paragraph that immediately follows a nested table in this same cell.
+    In Template A, every question's own text sits directly in the cell as
+    plain paragraphs, and its answer content always lives inside a nested
+    table (box or grid) — confirmed against the source — so that exact
+    transition (table just ended, next block is a paragraph) IS the
+    boundary between one question and the next. None (the default) is a
+    no-op for callers that don't need this signal.
+    """
+    just_finished_table = False
+    for block in cell.iter_inner_content():
+        if isinstance(block, Paragraph):
+            if just_finished_table and on_new_question is not None:
+                on_new_question()
+            process_para(block)
+            just_finished_table = False
+        elif isinstance(block, Table):
+            rows = list(block.rows)
+            n_cols = len(list(_unique_row_cells(rows[0]))) if rows else 0
+            if len(rows) <= 1 and n_cols <= 1:
+                for row in rows:
+                    for sub_cell in _unique_row_cells(row):
+                        _walk_cell(sub_cell, process_para, push_table, on_new_question)
+            else:
+                push_table(_table_to_dict(block))
+            just_finished_table = True
+
+
 # ===========================================================================
 # Template detection
 # ===========================================================================
@@ -367,17 +525,32 @@ def _extract_template_a(doc: Document) -> list[dict]:
         items.append({"text": text, "label": label})
         last_key = key
 
-    def process_para(para: Paragraph) -> None:
+    def label_for_para(para: Paragraph) -> tuple[str, str | None]:
         text, is_red = _para_red_info(para)
         if is_red:
-            label = _answer_label(text)
-        elif _is_lettered_option(para, numfmt_cache):
-            label = "OPTION"
-        else:
-            label = None
+            return text, _answer_label(text)
+        if _is_lettered_option(para, numfmt_cache):
+            return text, "OPTION"
+        return text, None
+
+    def process_para(para: Paragraph) -> None:
+        text, label = label_for_para(para)
         push(text, label)
         for tb_text, tb_red in _textbox_texts(para):
             push(tb_text, _answer_label(tb_text) if tb_red else None)
+
+    def push_table(table_dict: dict) -> None:
+        items.append({"table": table_dict})
+
+    def after_answer_table() -> None:
+        # A plain paragraph appearing right after a nested answer table
+        # (see _walk_cell) is, structurally, the start of the NEXT
+        # question — confirmed against the source: a question's own black
+        # text sits directly in the cell, and its red-text answer content
+        # is always inside a nested table. Once that nested table ends,
+        # the next paragraph in the cell is a new question's stem, never
+        # a continuation of the previous one.
+        push("[QUESTION START]", None)
 
     for block in _iter_blocks(doc):
         if isinstance(block, Paragraph):
@@ -392,8 +565,8 @@ def _extract_template_a(doc: Document) -> list[dict]:
                 if _is_boilerplate_row_a(row):
                     continue  # skip Instructions, Rubric, footer rows, etc.
                 for cell in _unique_row_cells(row):
-                    for para in cell.paragraphs:
-                        process_para(para)
+                    after_answer_table()  # marks this row/cell's own first question too
+                    _walk_cell(cell, process_para, push_table, after_answer_table)
 
     return items
 
@@ -456,6 +629,14 @@ def _extract_template_bc(doc: Document) -> list[dict]:
         items.append({"text": text, "label": None})
         last_text = text
 
+    def handle_para(para: Paragraph) -> None:
+        push(para.text)
+        for tb_text, _ in _textbox_texts(para):
+            push(tb_text)
+
+    def push_table(table_dict: dict) -> None:
+        items.append({"table": table_dict})
+
     for block in _iter_blocks(doc):
         if isinstance(block, Paragraph):
             text = block.text.strip()
@@ -465,10 +646,7 @@ def _extract_template_bc(doc: Document) -> list[dict]:
         elif isinstance(block, Table):
             for row in block.rows:
                 for cell in _unique_row_cells(row):
-                    for para in cell.paragraphs:
-                        push(para.text)
-                        for tb_text, _ in _textbox_texts(para):
-                            push(tb_text)
+                    _walk_cell(cell, handle_para, push_table)
 
     return items
 
@@ -501,11 +679,18 @@ def _extract_generic(doc: Document) -> list[dict]:
         items.append({"text": text, "label": label})
         last_key = key
 
-    def process_para(para: Paragraph) -> None:
+    def label_for_para(para: Paragraph) -> tuple[str, str | None]:
         text, is_red = _para_red_info(para)
-        push(text, _answer_label(text) if is_red else None)
+        return text, (_answer_label(text) if is_red else None)
+
+    def process_para(para: Paragraph) -> None:
+        text, label = label_for_para(para)
+        push(text, label)
         for tb_text, tb_red in _textbox_texts(para):
             push(tb_text, _answer_label(tb_text) if tb_red else None)
+
+    def push_table(table_dict: dict) -> None:
+        items.append({"table": table_dict})
 
     for block in _iter_blocks(doc):
         if isinstance(block, Paragraph):
@@ -513,8 +698,7 @@ def _extract_generic(doc: Document) -> list[dict]:
         elif isinstance(block, Table):
             for row in block.rows:
                 for cell in _unique_row_cells(row):
-                    for para in cell.paragraphs:
-                        process_para(para)
+                    _walk_cell(cell, process_para, push_table)
 
     return items
 
@@ -655,6 +839,15 @@ def extract_document(file_bytes: bytes, filename: str) -> tuple[str, str]:
 
         lines: list[str] = []
         for item in items:
+            if "table" in item:
+                # A structured table nested inside a question's cell (see
+                # _table_to_dict) — emitted as one JSON blob rather than
+                # flattened text, so the AI extractor gets the table's real
+                # row/column shape instead of reconstructing it from a
+                # flattened stream.
+                lines.append("TABLE_DATA: " + json.dumps(item["table"], ensure_ascii=False))
+                lines.append("")
+                continue
             label = item.get("label")
             text  = item["text"]
             lines.append(f"{label}: {text}" if label else text)
