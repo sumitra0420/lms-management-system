@@ -303,6 +303,39 @@
     }
   }
 
+  .answer-table-wrap {
+    background: #f8fafc;
+    border-left: 3px solid #2563eb;
+    border-radius: 0 6px 6px 0;
+    padding: 10px 12px;
+    overflow-x: auto;
+  }
+
+  .answer-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    color: #334155;
+
+    th, td {
+      text-align: left;
+      padding: 8px 10px;
+      border: 1px solid #e2e8f0;
+      vertical-align: top;
+      line-height: 1.5;
+    }
+
+    thead th {
+      background: #eef2ff;
+      font-weight: 600;
+      color: #1e293b;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #fff;
+    }
+  }
+
   // ── Edit mode ──────────────────────────────────────────────────────────────
 
   &.editing-card {

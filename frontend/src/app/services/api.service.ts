@@ -8,6 +8,12 @@ export interface VerificationIssue {
   problem: string;
 }
 
+export interface TableData {
+  has_header: boolean;
+  headers: string[];
+  rows: { cells: string[] }[];
+}
+
 export interface PipelineQuestion {
   id: string;
   type: string;
@@ -16,6 +22,7 @@ export interface PipelineQuestion {
   correct_answer: string;
   points: number | null;
   feedback: string;
+  table?: TableData | null;
   flagged?: boolean;
   consistency_score?: number;
   issues?: VerificationIssue[];

@@ -109,7 +109,30 @@
 
             <div class="qa-section">
               <span class="qa-label">Answer</span>
-              @if (q.type === 'short_answer') {
+              @if (q.type === 'table' && q.table) {
+                <div class="answer-table-wrap">
+                  <table class="answer-table">
+                    @if (q.table.has_header) {
+                      <thead>
+                        <tr>
+                          @for (header of q.table.headers; track header) {
+                            <th>{{ header }}</th>
+                          }
+                        </tr>
+                      </thead>
+                    }
+                    <tbody>
+                      @for (row of q.table.rows; track $index) {
+                        <tr>
+                          @for (cell of row.cells; track $index) {
+                            <td>{{ cell }}</td>
+                          }
+                        </tr>
+                      }
+                    </tbody>
+                  </table>
+                </div>
+              } @else if (q.type === 'short_answer') {
                 @if (answerBullets(q.correct_answer).length > 0) {
                   <ul class="answer-bullets">
                     @for (bullet of answerBullets(q.correct_answer); track bullet) {
