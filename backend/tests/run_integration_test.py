@@ -184,12 +184,14 @@ def _flag_breakdown(annotated: list[dict]) -> dict:
 
 
 async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_fingerprint: str) -> dict:
+    extraction_t0 = time.time()
     text, instructions = extract_document(file_bytes, filename)
     file_type = classify_document_type(filename)
 
     _token_calls.clear()
     result = await extract_and_verify(text, filename)
     tokens = _token_totals()
+    elapsed_sec = round(time.time() - extraction_t0, 2)
 
     verification = result.get("verification", {})
     questions = result["normalised_a"].get("questions", [])
@@ -258,6 +260,7 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
         "model_a_question_count": len(result["normalised_a"].get("questions", [])),
         "model_a_error": result["normalised_a"].get("error"),
         "tokens": tokens,
+        "elapsed_sec": elapsed_sec,
         "questions": annotated,
     }
 
@@ -302,7 +305,11 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR, prompt
                 file_bytes = f.read()
 
             record = await _run_one(filename, file_bytes, prompt_variant, prompt_fingerprint)
-            elapsed = time.time() - t0
+            # record["elapsed_sec"] (timed inside _run_one, around the actual
+            # extraction work) is the source of truth saved to this file's
+            # own JSON — reused here instead of a second outer timer so the
+            # printed/summary value can never drift from what's on disk.
+            elapsed = record["elapsed_sec"]
 
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2, ensure_ascii=False)

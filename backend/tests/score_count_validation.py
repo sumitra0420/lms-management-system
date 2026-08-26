@@ -162,7 +162,12 @@ def main(run: str = DEFAULT_RUN):
                 field_match_counts[field] += 1
             mark = "OK" if c["match"] else "MISMATCH"
             fname_col  = fname[:55] if first else ""
-            model_cols = f"{model_a_count:>7} {verifier_source_recount:>7}" if first else f"{'':>7} {'':>7}"
+            # verifier_source_recount is None for a "consistency" architecture
+            # run (independent A/B extraction, no verifier recount field) —
+            # print "n/a" rather than crashing the format spec on None.
+            model_a_col = model_a_count if model_a_count is not None else "n/a"
+            verify_b_col = verifier_source_recount if verifier_source_recount is not None else "n/a"
+            model_cols = f"{model_a_col:>7} {verify_b_col:>7}" if first else f"{'':>7} {'':>7}"
             print(f"{fname_col:<55} {field:<24} {c['ground_truth']:>6} {c['predicted']:>6} {mark:>6} {model_cols}")
             first = False
 
