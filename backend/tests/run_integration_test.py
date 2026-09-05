@@ -39,12 +39,14 @@ having to invent a new label name every time.
 """
 
 import asyncio
+import csv
 import hashlib
 import json
 import logging
 import os
 import sys
 import time
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -54,6 +56,41 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # (model start, per-model question counts, consistency scores, retry
 # attempts) would be silently dropped — only WARNING+ would show.
 logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
+
+import boto3
+
+# Captures real per-call token usage straight from Bedrock's Converse API
+# response — wrapping converse() directly means this works regardless of
+# which model pair is active in .env, with no changes needed to
+# extractor.py/consistency.py. Same technique used on the verify-flow
+# branch's run_integration_test.py, ported here so both architectures'
+# results are comparable on tokens/time, not just accuracy.
+_token_calls: list[dict] = []
+_orig_boto3_client = boto3.client
+
+
+def _patched_boto3_client(*args, **kwargs):
+    client = _orig_boto3_client(*args, **kwargs)
+    service = args[0] if args else kwargs.get("service_name")
+    if service == "bedrock-runtime":
+        orig_converse = client.converse
+
+        def wrapped_converse(*a, **kw):
+            resp = orig_converse(*a, **kw)
+            usage = resp.get("usage") or {}
+            _token_calls.append({
+                "model_id":      kw.get("modelId"),
+                "input_tokens":  usage.get("inputTokens"),
+                "output_tokens": usage.get("outputTokens"),
+                "total_tokens":  usage.get("totalTokens"),
+            })
+            return resp
+
+        client.converse = wrapped_converse
+    return client
+
+
+boto3.client = _patched_boto3_client
 
 from app.services import extractor as extractor_module
 from app.services.classifier import classify_document_type
@@ -66,6 +103,62 @@ from tests.prompt_variants import get_prompt
 DEFAULT_DOCX_DIR = os.path.join(os.path.dirname(__file__), "input", "Quiz")
 DEFAULT_OUTPUT_SUBDIR = "integration"
 DEFAULT_PROMPT_VARIANT = "new"
+
+
+def _token_totals() -> dict:
+    """Classifies the calls captured for the file just processed by model
+    role (A/B, via MODEL_A_ID/MODEL_B_ID) and sums each into a small dict —
+    called right after check_with_retry() returns, before the next file's
+    calls start accumulating in the same list."""
+    model_a_id = os.getenv("MODEL_A_ID", "")
+    model_b_id = os.getenv("MODEL_B_ID", "")
+
+    def _sum(role_id, field):
+        return sum(c[field] or 0 for c in _token_calls if c["model_id"] == role_id)
+
+    return {
+        "model_a_calls":      sum(1 for c in _token_calls if c["model_id"] == model_a_id),
+        "model_a_input":      _sum(model_a_id, "input_tokens"),
+        "model_a_output":     _sum(model_a_id, "output_tokens"),
+        "model_a_total":      _sum(model_a_id, "total_tokens"),
+        "model_b_calls":      sum(1 for c in _token_calls if c["model_id"] == model_b_id),
+        "model_b_input":      _sum(model_b_id, "input_tokens"),
+        "model_b_output":     _sum(model_b_id, "output_tokens"),
+        "model_b_total":      _sum(model_b_id, "total_tokens"),
+        "grand_total_input":  sum(c["input_tokens"]  or 0 for c in _token_calls),
+        "grand_total_output": sum(c["output_tokens"] or 0 for c in _token_calls),
+        "grand_total_tokens": sum(c["total_tokens"]  or 0 for c in _token_calls),
+    }
+
+
+TOKEN_CSV_FIELDS = [
+    "branch", "arch", "filename", "timestamp", "attempt",
+    "model_a_calls", "model_a_input", "model_a_output", "model_a_total",
+    "model_b_calls", "model_b_input", "model_b_output", "model_b_total",
+    "grand_total_input", "grand_total_output", "grand_total_tokens",
+]
+
+
+def _append_token_csv_row(branch: str, filename: str, attempt: int, tokens: dict):
+    out_dir = os.path.join(os.path.dirname(__file__), "output", "test_results", "token_usage")
+    os.makedirs(out_dir, exist_ok=True)
+    csv_path = os.path.join(out_dir, "comparison.csv")
+
+    row = {
+        "branch":    branch,
+        "arch":      "run_integration_test.py (consistency, main branch)",
+        "filename":  filename,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "attempt":   attempt,
+        **tokens,
+    }
+
+    write_header = not os.path.exists(csv_path)
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=TOKEN_CSV_FIELDS)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
 
 
 def _flag_breakdown(annotated: list[dict]) -> dict:
@@ -87,10 +180,14 @@ def _flag_breakdown(annotated: list[dict]) -> dict:
 
 
 async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_fingerprint: str) -> dict:
+    extraction_t0 = time.time()
     text, instructions = extract_document(file_bytes, filename)
     file_type = classify_document_type(filename)
 
+    _token_calls.clear()
     result = await check_with_retry(text, filename)
+    tokens = _token_totals()
+    elapsed_sec = round(time.time() - extraction_t0, 2)
 
     consistency = result.get("consistency", {})
     questions = result["normalised_a"].get("questions", [])
@@ -162,6 +259,8 @@ async def _run_one(filename: str, file_bytes: bytes, prompt_label: str, prompt_f
         "model_b_question_count": len(result["normalised_b"].get("questions", [])),
         "model_a_error": result["normalised_a"].get("error"),
         "model_b_error": result["normalised_b"].get("error"),
+        "tokens": tokens,
+        "elapsed_sec": elapsed_sec,
         "questions": annotated,
     }
 
@@ -206,16 +305,23 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR, prompt
                 file_bytes = f.read()
 
             record = await _run_one(filename, file_bytes, prompt_variant, prompt_fingerprint)
-            elapsed = time.time() - t0
+            # record["elapsed_sec"] (timed inside _run_one, around the actual
+            # extraction work) is the source of truth saved to this file's
+            # own JSON — reused here instead of a second outer timer so the
+            # printed/summary value can never drift from what's on disk.
+            elapsed = record["elapsed_sec"]
 
             with open(out_path, "w", encoding="utf-8") as f:
                 json.dump(record, f, indent=2, ensure_ascii=False)
+
+            _append_token_csv_row(output_subdir, filename, record["attempt"], record["tokens"])
 
             status = "PASS" if record["consistent"] else "FLAG"
             print(
                 f"  {status} {filename} — {record['total_questions']}Q, "
                 f"consistency={record['consistency_score']:.4f}, "
                 f"flagged={record['flag_count']}, attempt={record['attempt']}, "
+                f"tokens={record['tokens']['grand_total_tokens']}, "
                 f"{elapsed:.1f}s"
             )
             summary.append({
@@ -236,6 +342,7 @@ async def main(docx_dir: str, output_subdir: str = DEFAULT_OUTPUT_SUBDIR, prompt
                 "model_b_question_count": record["model_b_question_count"],
                 "model_a_error": record["model_a_error"],
                 "model_b_error": record["model_b_error"],
+                "tokens": record["tokens"],
                 "elapsed_sec": round(elapsed, 1),
             })
 
