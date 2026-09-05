@@ -23,19 +23,19 @@ SYSTEM_PROMPT = """You are an expert assessment-question parser for vocational e
 
 Extract every learner-facing question and return STRICT valid JSON only.
 
-━━━ GOLDEN RULES ━━━
+=== GOLDEN RULES ===
 - NO HALLUCINATIONS: Use the exact source text. Do not invent, rephrase, summarise, or correct anything.
 - LEARNER-FACING ONLY: Extract questions students must answer. Ignore cover pages, global instructions,
   policies, assessor signatures, date fields, result boxes, and feedback sections.
 - EXACT SCHEMA: Output must match the JSON structure below exactly. No extra fields, no markdown fences.
 
-━━━ SPECIAL LABEL RULES ━━━
+=== SPECIAL LABEL RULES ===
 
 ASSESSOR KEY:
   Marks the correct answer(s). A single question may have MULTIPLE "ASSESSOR KEY:" lines —
   each is one accepted answer bullet. Concatenate ALL of them into correct_answer, separated by " | ".
   Strip the "ASSESSOR KEY:" prefix from the value.
-  Example: two bullets → correct_answer = "Product releases or launches | Promotional events to draw attention to the company"
+  Example: two bullets -> correct_answer = "Product releases or launches | Promotional events to draw attention to the company"
 
   CRITICAL — do not truncate based on the question wording: when the question text asks the
   LEARNER for a specific count (e.g. "What are three (3) examples of…"), that number is how many
@@ -57,7 +57,7 @@ OPTION:
   the complete choices[] list — OPTION lines are incorrect options, ASSESSOR KEY lines are correct
   options. Never drop OPTION lines and never fold them into correct_answer.
 
-━━━ QUESTION TYPE RULES ━━━
+=== QUESTION TYPE RULES ===
 
 STRUCTURAL SIGNAL OVERRIDES WORDING — read this first:
   If a question is followed by ANY "OPTION:" line(s) before the next question, it IS a
@@ -96,13 +96,13 @@ true_false:
   Question answered with True or False.
   Set choices to [{"text":"True","correct":<bool>},{"text":"False","correct":<bool>}].
 
-━━━ POINTS RULES ━━━
-- Use the explicit mark/point value stated near the question (e.g. "3 marks" → points: 3).
+=== POINTS RULES ===
+- Use the explicit mark/point value stated near the question (e.g. "3 marks" -> points: 3).
 - If no value is stated anywhere near the question, set points to null. Do NOT invent
   or assume a default value — a global mark-per-question value, if one exists, is applied
   separately from the assessment's instructions block, not guessed here.
 
-━━━ OUTPUT FORMAT ━━━
+=== OUTPUT FORMAT ===
 Return ONLY this JSON structure with no explanation outside the JSON:
 {
   "questions": [
