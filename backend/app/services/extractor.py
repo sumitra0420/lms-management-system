@@ -24,7 +24,7 @@ SYSTEM_PROMPT = """You are an expert assessment-question parser for vocational e
 
 Extract every learner-facing question and return STRICT valid JSON only.
 
-━━━ GOLDEN RULES ━━━
+=== GOLDEN RULES ===
 - NO HALLUCINATIONS: Use the exact source text. Do not invent, rephrase, summarise, or correct anything.
 - LEARNER-FACING ONLY: Extract questions students must answer. Ignore cover pages, global instructions,
   policies, assessor signatures, date fields, result boxes, and feedback sections.
@@ -33,13 +33,13 @@ Extract every learner-facing question and return STRICT valid JSON only.
   begins — everything between one "[QUESTION START]" and the next belongs to that one question only.
   Not every document has these markers; when absent, use your own judgement as before.
 
-━━━ SPECIAL LABEL RULES ━━━
+=== SPECIAL LABEL RULES ===
 
 ASSESSOR KEY:
   Marks the correct answer(s). A single question may have MULTIPLE "ASSESSOR KEY:" lines —
   each is one accepted answer bullet. Concatenate ALL of them into correct_answer, separated by " | ".
   Strip the "ASSESSOR KEY:" prefix from the value.
-  Example: two bullets → correct_answer = "Product releases or launches | Promotional events to draw attention to the company"
+  Example: two bullets -> correct_answer = "Product releases or launches | Promotional events to draw attention to the company"
 
   CRITICAL — do not truncate based on the question wording: when the question text asks the
   LEARNER for a specific count (e.g. "What are three (3) examples of…"), that number is how many
@@ -68,7 +68,7 @@ TABLE_DATA:
   objective / regulator reference grid, or a term / definition table). When a question is followed
   by a TABLE_DATA block before the next question, it is a table question — see the "table" type below.
 
-━━━ QUESTION TYPE RULES ━━━
+=== QUESTION TYPE RULES ===
 
 STRUCTURAL SIGNAL OVERRIDES WORDING — read this first:
   If a question is followed by ANY "OPTION:" line(s) before the next question, it IS a
@@ -120,13 +120,13 @@ table:
   Use the exact cell text from TABLE_DATA verbatim — never rephrase, summarise, reorder, or drop
   a cell.
 
-━━━ POINTS RULES ━━━
-- Use the explicit mark/point value stated near the question (e.g. "3 marks" → points: 3).
+=== POINTS RULES ===
+- Use the explicit mark/point value stated near the question (e.g. "3 marks" -> points: 3).
 - If no value is stated anywhere near the question, set points to null. Do NOT invent
   or assume a default value — a global mark-per-question value, if one exists, is applied
   separately from the assessment's instructions block, not guessed here.
 
-━━━ OUTPUT FORMAT ━━━
+=== OUTPUT FORMAT ===
 Return ONLY this JSON structure with no explanation outside the JSON:
 {
   "questions": [
@@ -492,7 +492,7 @@ TYPOGRAPHIC VARIATIONS ARE NOT ERRORS:
   typos/inconsistencies in the source (e.g. "Do no rush" for "Do not rush") — those are still
   worth flagging, since they reveal a real problem in the source document itself.
 
-━━━ OUTPUT FORMAT ━━━
+=== OUTPUT FORMAT ===
 Return ONLY this JSON with no explanation outside it:
 {
   "valid": true,
